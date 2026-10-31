@@ -1,0 +1,254 @@
+{
+  "_id": "6a86b17834e5de3cc593accf",
+  "code": 307624752,
+  "city": {
+    "_id": "5e5501caeb80a7245175de08",
+    "__v": 0,
+    "code": "72",
+    "createdAt": "2022-06-08T09:48:38.423Z",
+    "isActive": true,
+    "location": {
+      "type": "Point",
+      "coordinates": [
+        106.26573828193011,
+        11.082988960317325
+      ],
+      "correct": true
+    },
+    "postalCode": "840000",
+    "slug": "tay-ninh",
+    "sorder": 1,
+    "translation": [],
+    "updatedAt": "2024-04-10T03:19:44.108Z",
+    "children": [
+      "5e5501caeb80a7245175de0d"
+    ],
+    "name": "Tỉnh Tây Ninh"
+  },
+  "totalPrice": 1850000000,
+  "project": null,
+  "facade": 5,
+  "description": "<p>ĐẤT - FULL THỔ CƯ - KHU DÂN CƯ SÀI GÒN VILLAGE</p><p>Diện tích đất 5m x 16m, đường số 7, dãy B4.</p><p>Xây dựng: Khu dân cư xây dựng 1 trệt, 1 lầu, 1 tum.</p><p>Giá: 1 tỷ 850 triệu, đường trước đất rộng 12m.</p><p>Vị trí đất: Cách 500m đến Khu đô thị T&T Millennia, cách Trường Đại học Tài nguyên Môi trường 6km, cách 9km đến Parc Mall Q.8.</p><p>Tiện ích đầy đủ, bán kính 1km đầy đủ, trường học, công viên, Bách Hóa Xanh.</p><p>Pháp lý: Chuẩn chỉnh, sổ hồng riêng.</p><p>Liên hệ: 0919.089.456 Mr. Triều.</p>",
+  "userTypes": 0,
+  "source": 2,
+  "typeOfHouse": {
+    "name": "Đất",
+    "_id": "65eeb3cf01dfc72e1912edb3",
+    "value": "dat",
+    "slug": "dat"
+  },
+  "ward": {
+    "_id": "68887b8bb43986091f316437",
+    "code": "28159",
+    "city": "5e5501caeb80a7245175de08",
+    "location": {
+      "type": "Point",
+      "coordinates": [
+        106.689076,
+        10.6150633
+      ],
+      "correct": true
+    },
+    "isActive": true,
+    "sorder": 1,
+    "version": "0",
+    "createdAt": "2026-08-21T04:33:34.903Z",
+    "updatedAt": "2026-08-21T04:33:34.903Z",
+    "translation": [],
+    "slug": "can-giuoc",
+    "children": [
+      "5e5501d7eb80a72451760543",
+      "5e5501d7eb80a72451760540",
+      "5e5501d7eb80a7245176053d"
+    ],
+    "name": "Xã Cần Giuộc"
+  },
+  "media": [
+    {
+      "name": "1787196069492_1563768607887329970_3723970352990073263_h.jpg",
+      "width": 960,
+      "description": null,
+      "mediaType": 1,
+      "mimeType": "image/jpeg",
+      "uri": "/meeyland/images/2026/08/20/178719606949215637686078873299703723970352990073263h-1787211769284-143724.jpg",
+      "url": "https://io.meeymedia.com/meeyland/images/2026/08/20/178719606949215637686078873299703723970352990073263h-1787211769284-143724.jpg",
+      "height": 1280
+    },
+    {
+      "name": "1787196069612_1563768607887329970_3723970352990073263_h.jpg",
+      "width": 960,
+      "description": null,
+      "mediaType": 1,
+      "mimeType": "image/jpeg",
+      "uri": "/meeyland/images/2026/08/20/178719606961215637686078873299703723970352990073263h-1787211769727-214550.jpg",
+      "url": "https://io.meeymedia.com/meeyland/images/2026/08/20/178719606961215637686078873299703723970352990073263h-1787211769727-214550.jpg",
+      "height": 1280
+    },
+    {
+      "name": "1787196069236_1563768607887329970_3723970352990073263_h.jpg",
+      "width": 960,
+      "description": null,
+      "mediaType": 1,
+      "mimeType": "image/jpeg",
+      "uri": "/meeyland/images/2026/08/20/178719606923615637686078873299703723970352990073263h-1787211774823-127496.jpg",
+      "url": "https://io.meeymedia.com/meeyland/images/2026/08/20/178719606923615637686078873299703723970352990073263h-1787211774823-127496.jpg",
+      "height": 1280
+    },
+    {
+      "name": "1787196069365_1563768607887329970_3723970352990073263_h.jpg",
+      "width": 960,
+      "description": null,
+      "mediaType": 1,
+      "mimeType": "image/jpeg",
+      "uri": "/meeyland/images/2026/08/20/178719606936515637686078873299703723970352990073263h-1787211775247-300514.jpg",
+      "url": "https://io.meeymedia.com/meeyland/images/2026/08/20/178719606936515637686078873299703723970352990073263h-1787211775247-300514.jpg",
+      "height": 1280
+    },
+    {
+      "name": "1787211803572_1563768607887329970_5733744489800429971_h.jpg",
+      "width": 858,
+      "description": null,
+      "mediaType": 1,
+      "mimeType": "image/jpeg",
+      "uri": "/meeyland/images/2026/08/20/178721180357215637686078873299705733744489800429971h-1787211884106-116987.jpg",
+      "url": "https://io.meeymedia.com/meeyland/images/2026/08/20/178721180357215637686078873299705733744489800429971h-1787211884106-116987.jpg",
+      "height": 1908
+    },
+    {
+      "duration": 71.0401,
+      "thumbnail": {
+        "s3Key": "images/2026/08/20/screenshots.1787211889567.jpg",
+        "size": 55690,
+        "name": "screenshots.jpg",
+        "width": 480,
+        "mimeType": "image/jpeg",
+        "uri": "/meeyland/images/2026/08/20/screenshots.1787211889567.jpg",
+        "url": "https://io.meeymedia.com/meeyland/images/2026/08/20/screenshots.1787211889567.jpg",
+        "height": 848
+      },
+      "urlVod": "https://d.meeymedia.com/meeyland/videos/,360p,480p,720p,1080p,/2026/08/20/178721180369415637686078873299705733744489800429971-1787211889082-902586/master.m3u8",
+      "name": "1787211803694_1563768607887329970_5733744489800429971.mp4",
+      "description": "",
+      "mediaType": 2,
+      "mimeType": "video/mp4",
+      "uri": "/meeyland/videos/2026/08/20/178721180369415637686078873299705733744489800429971-1787211889082-902586.mp4",
+      "url": "https://v.meeymedia.com/meeyland/videos/2026/08/20/178721180369415637686078873299705733744489800429971-1787211889082-902586.mp4?hashsign=Gq4emj2U_NsE06DUJVLKDw&e=1818748152"
+    }
+  ],
+  "subscription": {
+    "code": "TINTHUONG",
+    "_id": "65f17ea40ab5f1ebaade36b1",
+    "type": 4,
+    "title": "Tin thường"
+  },
+  "isCrawl": false,
+  "isTourDisplayed": true,
+  "title": "Đất giá 1,85 tỷ, full thổ cư, khu dân cư Sài Gòn Village, diện tích đất 5m x 16m, đường số 7, dãy B4",
+  "isVerify": false,
+  "totalView": 0,
+  "createdAt": "2026-08-20T07:49:12.371Z",
+  "contact": {
+    "fullName": "Phạm Minh Triều",
+    "phones": [
+      "0919089456"
+    ],
+    "email": "pmtrieu0607@gmail.com"
+  },
+  "area": 80,
+  "thumbnail": {
+    "size": 247456,
+    "name": "1787196069236_1563768607887329970_3723970352990073263_h.jpg",
+    "width": 960,
+    "mimeType": "image/jpeg",
+    "uri": "/meey3d/images/2026/08/20/178719606923615637686078873299703723970352990073263h-1787211985667-772078.jpg",
+    "url": "https://io.meeymedia.com/meey3d/images/2026/08/20/178719606923615637686078873299703723970352990073263h-1787211985667-772078.jpg",
+    "height": 1280
+  },
+  "publishedAt": "2026-10-12T09:05:28.363Z",
+  "tour": "6a86b0d2f467d392664800d3",
+  "totalPoint": 8.333333333333332,
+  "depth": 16,
+  "isBoughtElectron": false,
+  "createdBy": {
+    "_id": "62ad69e82830c100119d96c8",
+    "name": "Phạm Minh Triều",
+    "email": "pmtrieu0607@gmail.com",
+    "phone": "0919089456",
+    "avatar": "https://static.meeyid.com/uploads/130bf937-2923-4072-962e-fe54e78637b3.jpg",
+    "status": 1,
+    "phoneVerified": true,
+    "emailVerified": false,
+    "kyc": {
+      "status": 1
+    },
+    "objectType": 4,
+    "createdDate": "2022-06-18T06:00:08.286Z"
+  },
+  "category": {
+    "name": "Mua bán",
+    "_id": "5deb722db4367252525c1d00",
+    "slugIncludeTypeOfHouse": "ban",
+    "value": "mua_ban",
+    "uri": "/mua-ban-nha-dat-a4",
+    "slug": "mua-ban-nha-dat"
+  },
+  "userTypesLabel": "Môi giới",
+  "addressLabel": " ( cũ)",
+  "priceLabel": {
+    "totalPrice": "1.85 billion vnd",
+    "subTotalPrice": "23.13m vnd/m²"
+  },
+  "thumbnailDisplay": {
+    "name": "1787196069492_1563768607887329970_3723970352990073263_h.jpg",
+    "width": 960,
+    "description": null,
+    "mediaType": 1,
+    "mimeType": "image/jpeg",
+    "uri": "/meeyland/images/2026/08/20/178719606949215637686078873299703723970352990073263h-1787211769284-143724.jpg",
+    "url": "https://io.meeymedia.com/meeyland/images/2026/08/20/178719606949215637686078873299703723970352990073263h-1787211769284-143724.jpg",
+    "height": 1280
+  },
+  "uri": "/ban-dat-can-giuoc-tay-ninh-p1122/307624752",
+  "url": "https://meeyland.com/ban-dat-can-giuoc-tay-ninh-p1122/307624752",
+  "oldDistrict": {
+    "_id": "5e5501cbeb80a7245175e068",
+    "__v": 0,
+    "city": "5e5501caeb80a7245175de08",
+    "code": "807",
+    "createdAt": "2022-06-08T09:49:31.450Z",
+    "isActive": true,
+    "location": {
+      "type": "Point",
+      "coordinates": [
+        106.6650358,
+        10.6009679
+      ],
+      "correct": true
+    },
+    "slug": "can-giuoc",
+    "sorder": 1,
+    "translation": [
+      {
+        "languageCode": "vi",
+        "name": "Cần Giuộc",
+        "prefix": "Huyện"
+      },
+      {
+        "languageCode": "en",
+        "name": "Can Giuoc",
+        "prefix": "District"
+      }
+    ],
+    "updatedAt": "2024-04-10T03:23:53.962Z",
+    "wards": [
+      "5e5501d7eb80a7245176053e",
+      "5e5501d7eb80a72451760542",
+      "68887b8bb43986091f316437",
+      "5e5501d7eb80a7245176054b",
+      "5e5501d7eb80a72451760546"
+    ],
+    "originLocation": {
+      "city": "5e5501caeb80a7245175de0d"
+    }
+  }
+}
