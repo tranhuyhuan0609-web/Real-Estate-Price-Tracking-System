@@ -34,6 +34,7 @@ class GenericHtmlSpider(Spider):
         # Crawl health signals read by CrawlSiteUseCase (see GenericApiSpider)
         self.aborted_reason: Optional[str] = None
         self.exhausted: bool = False
+        self._proxy_index: int = 0
 
     def _extract_selector_value(self, context: Selector, selector_str: str, is_list: bool = False) -> Any:
         """Extract text or attribute using CSS, XPath, or embedded JSON selector."""
@@ -110,15 +111,31 @@ class GenericHtmlSpider(Spider):
     ) -> Optional[httpx.Response]:
         retries = self.rate_cfg.retry_times
         timeout = self.rate_cfg.timeout_sec
+        headers = dict(self.req_cfg.headers)
+        proxies = (
+            list(self.config.proxy_settings.proxies)
+            if self.config.proxy_settings and self.config.proxy_settings.enabled and self.config.proxy_settings.proxies
+            else []
+        )
 
         for attempt in range(1 + retries):
+            current_proxy = None
+            if proxies:
+                current_proxy = proxies[(self._proxy_index + attempt) % len(proxies)]
+
             try:
-                response = await client.get(url=url, params=params, timeout=timeout)
+                if current_proxy and current_proxy != getattr(client, "_current_proxy", None):
+                    async with httpx.AsyncClient(proxy=current_proxy, headers=headers, follow_redirects=True) as rot_client:
+                        response = await rot_client.get(url=url, params=params, timeout=timeout)
+                else:
+                    response = await client.get(url=url, params=params, timeout=timeout)
+
                 if response.status_code == 200:
                     return response
                 elif response.status_code in (429, 500, 502, 503, 504):
                     logger.warning("Attempt %d/%d for %s status %d. Backing off...", attempt + 1, retries + 1, url, response.status_code)
-                    await asyncio.sleep(2.0 * (attempt + 1))
+                    if attempt < retries:
+                        await asyncio.sleep(2.0 * (attempt + 1))
                 else:
                     logger.error("HTTP error %d for URL: %s", response.status_code, url)
                     return None

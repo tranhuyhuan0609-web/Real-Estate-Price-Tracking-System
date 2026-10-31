@@ -60,7 +60,7 @@ class PgListingRepository(ListingRepository):
 
         # Step 2: Lock & query current listing
         await cur.execute(
-            "SELECT current_price_vnd, current_price_per_m2, status FROM listings WHERE listing_key = %s FOR UPDATE;",
+            "SELECT current_price_vnd, current_price_per_m2, price_status, status FROM listings WHERE listing_key = %s FOR UPDATE;",
             (item.listing_key,),
         )
         existing = await cur.fetchone()
@@ -274,7 +274,7 @@ class PgListingRepository(ListingRepository):
                 async with conn.cursor() as cur:
                     update_run_query = """
                         UPDATE crawl_runs SET
-                            items_processed = items_processed + 1,
+                            items_processed = LEAST(items_scraped, items_processed + 1),
                             new_listings_count = new_listings_count + %s,
                             price_changes_detected = price_changes_detected + %s
                         WHERE crawl_run_id = %s;
@@ -329,7 +329,7 @@ class PgListingRepository(ListingRepository):
             return
         query = """
             UPDATE crawl_runs SET
-                items_processed = items_processed + %s,
+                items_processed = LEAST(items_scraped, items_processed + %s),
                 new_listings_count = new_listings_count + %s,
                 price_changes_detected = price_changes_detected + %s
             WHERE crawl_run_id = %s;

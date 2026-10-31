@@ -114,21 +114,24 @@ class CrawlerSchedulerService:
             last_run_at = cfg.get("last_run_at")
             schedule_times = cfg.get("schedule_times") or []
 
-            # Check full sweep schedule match
-            # schedule_times are HH:MM in UTC. Fire each slot at most once per day: the poll interval
-            # is shorter than a minute, so without this a fast-finishing sweep could re-trigger.
+            # Check full sweep schedule match with 15-minute window tolerance to prevent missing slots on restart
             is_full_sweep = False
-            slot_key = (now_utc.strftime("%Y-%m-%d"), now_hm)
+            today_str = now_utc.strftime("%Y-%m-%d")
             last_db_sweep = recent_sweeps.get(site_id)
-            ran_recently_in_db = last_db_sweep and (now_utc - last_db_sweep).total_seconds() < 3000
-            if (
-                schedule_times
-                and any(s == now_hm for s in schedule_times)
-                and self._last_full_sweep_slot.get(site_id) != slot_key
-                and not ran_recently_in_db
-            ):
-                is_full_sweep = True
-                self._last_full_sweep_slot[site_id] = slot_key
+            ran_recently_in_db = last_db_sweep and (now_utc - last_db_sweep).total_seconds() < 3600
+
+            for slot_time_str in schedule_times:
+                try:
+                    slot_hour, slot_min = map(int, slot_time_str.split(":"))
+                    slot_dt = now_utc.replace(hour=slot_hour, minute=slot_min, second=0, microsecond=0)
+                    delay_seconds = (now_utc - slot_dt).total_seconds()
+                    slot_key = (today_str, slot_time_str)
+                    if 0 <= delay_seconds <= 900 and self._last_full_sweep_slot.get(site_id) != slot_key and not ran_recently_in_db:
+                        is_full_sweep = True
+                        self._last_full_sweep_slot[site_id] = slot_key
+                        break
+                except Exception:
+                    continue
 
             # Check interval due
             is_due = False
@@ -176,8 +179,8 @@ class CrawlerSchedulerService:
                                 "Skipping lifecycle for run '%s': consumers have not ingested enough of its items.",
                                 run_id,
                             )
-                    await lifecycle_uc.refresh_gold_views()
-                    logger.info("Materialized views refreshed successfully for run '%s'", run_id)
+                        await lifecycle_uc.refresh_gold_views()
+                        logger.info("Materialized views refreshed successfully for full sweep run '%s'", run_id)
                 except Exception as life_err:
                     logger.error("Failed to run automated lifecycle / view refresh for '%s': %s", run_id, life_err)
         except Exception as exc:
@@ -202,7 +205,7 @@ class CrawlerSchedulerService:
                         # Only mark runs that have been running for more than 2 hours as stale/failed
                         await cur.execute(
                             "UPDATE crawl_runs SET status = 'failed', error_message = 'Interrupted: timed out running session on restart' "
-                            "WHERE status = 'running' AND started_at < NOW() - INTERVAL '2 hours'"
+                            "WHERE status = 'running' AND started_at < NOW() - INTERVAL '1 hour'"
                         )
                         if cur.rowcount > 0:
                             logger.info("Cleaned up %d stale running crawl runs on startup.", cur.rowcount)

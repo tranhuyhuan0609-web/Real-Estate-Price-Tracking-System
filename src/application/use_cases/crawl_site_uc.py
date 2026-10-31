@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Callable, Optional
 from src.application.interfaces.config_repository import ConfigRepository
 from src.application.interfaces.crawl_run_repository import CrawlRunRepository
 from src.application.interfaces.event_publisher import EventPublisher

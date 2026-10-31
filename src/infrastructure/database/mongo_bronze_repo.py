@@ -1,28 +1,29 @@
-"""Asynchronous MongoDB repository for Bronze layer raw listings storage."""
+"""Bronze layer repository implementation for MongoDB."""
 
 from __future__ import annotations
 
 import logging
-from typing import List
+from typing import List, Optional
 from pymongo import AsyncMongoClient, UpdateOne
-from pymongo.errors import PyMongoError
+from src.application.interfaces.bronze_repository import BronzeRepository
 from src.domain.entities import RawEventMessage
 
 logger = logging.getLogger(__name__)
 
 
-class MongoBronzeRepository:
-    """Asynchronously stores raw ingestion payloads and crawl run histories in MongoDB."""
+class MongoBronzeRepository(BronzeRepository):
+    """Bronze repository that persists raw scraped items asynchronously into MongoDB."""
 
-    def __init__(self, mongo_uri: str, db_name: str, collection_name: str = "raw_listings") -> None:
-        self.client: AsyncMongoClient = AsyncMongoClient(mongo_uri)
+    def __init__(self, uri: str, db_name: str, collection_name: str = "raw_listings") -> None:
+        self.client: AsyncMongoClient = AsyncMongoClient(uri)
         self.db = self.client[db_name]
         self.collection = self.db[collection_name]
 
     async def bulk_upsert_raw_events(self, events: List[RawEventMessage]) -> int:
         """Upsert a batch of raw events into MongoDB raw_listings collection asynchronously.
 
-        Updates the latest JSON payload while keeping an array of all crawl_run_ids that saw the listing.
+        Updates the latest JSON payload while keeping a set of unique crawl_run_ids that saw the listing
+        to ensure idempotency when Kafka re-delivers messages.
         """
         if not events:
             return 0
@@ -35,11 +36,8 @@ class MongoBronzeRepository:
                     "latest_raw_payload": event.raw_payload,
                     "last_scraped_at": event.scraped_at,
                 },
-                "$push": {
-                    "crawl_run_ids": {
-                        "$each": [event.crawl_run_id],
-                        "$slice": -50,
-                    },
+                "$addToSet": {
+                    "crawl_run_ids": event.crawl_run_id,
                 },
                 "$setOnInsert": {
                     "listing_key": event.listing_key,
@@ -58,12 +56,11 @@ class MongoBronzeRepository:
         try:
             result = await self.collection.bulk_write(operations, ordered=False)
             upserted_count = (result.upserted_count or 0) + (result.modified_count or 0)
-            logger.debug("Bronze bulk_write succeeded: upserted=%d, modified=%d", result.upserted_count, result.modified_count)
             return upserted_count
-        except PyMongoError as exc:
-            logger.error("Failed to execute bulk_write to MongoDB Bronze collection: %s", exc)
+        except Exception as exc:
+            logger.error("Failed to execute bulk_write on bronze MongoDB: %s", exc, exc_info=True)
             raise
 
     async def close(self) -> None:
-        """Close asynchronous MongoDB client connection."""
+        """Close MongoDB connection gracefully."""
         await self.client.close()

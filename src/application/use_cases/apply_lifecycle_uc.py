@@ -1,10 +1,11 @@
-"""Lifecycle management use case for expiring vanished listings after full sweep runs."""
+"""Use case for executing the listing lifecycle after a successful crawl run."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+
 from src.application.interfaces.lifecycle_repository import LifecycleRepository
 
 if TYPE_CHECKING:
@@ -12,24 +13,29 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MAX_MISSING_COUNT: int = 3
+
 
 class ApplyLifecycleUseCase:
-    """Detects missing listings in full_sweep crawl runs and updates their lifecycle status."""
+    """Executes the lifecycle state transitions for listings after a crawl run completes."""
 
     def __init__(
         self,
-        repo_or_pool: Union[LifecycleRepository, "AsyncConnectionPool", None] = None,
+        repo_or_pool: Union[LifecycleRepository, "AsyncConnectionPool", Any, None] = None,
         *,
         pool: Optional["AsyncConnectionPool"] = None,
+        repo: Optional[LifecycleRepository] = None,
+        default_max_missing_count: int = DEFAULT_MAX_MISSING_COUNT,
     ) -> None:
-        target = repo_or_pool if repo_or_pool is not None else pool
+        target = repo if repo is not None else (repo_or_pool if repo_or_pool is not None else pool)
         if target is None:
             raise ValueError("Either 'repo' or 'pool' must be provided to ApplyLifecycleUseCase.")
-        if isinstance(target, LifecycleRepository):
-            self.repo = target
-        else:
+        if hasattr(target, "connection"):
             from src.infrastructure.database.pg_lifecycle_repo import PgLifecycleRepository
-            self.repo = PgLifecycleRepository(target)
+            self.repo: LifecycleRepository = PgLifecycleRepository(target)
+        else:
+            self.repo = target
+        self.default_max_missing_count = default_max_missing_count
 
     async def wait_for_ingestion(
         self,
@@ -43,57 +49,68 @@ class ApplyLifecycleUseCase:
         """Wait until the Silver/Gold consumers have processed (almost) all items of a crawl run.
 
         Lifecycle compares listings.last_seen_at with the run start, so it must not run while
-        consumers still have a backlog for this run. Returns True when it is safe to continue:
-        every scraped item was processed, or progress stalled with at least ``min_ratio`` done
-        (a few items may have gone to the DLQ and are never counted as processed).
+        scraped items are still buffered in Kafka or midway through batch ingestion.
         """
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout_sec
-        last_progress_at = loop.time()
+        deadline = asyncio.get_running_loop().time() + timeout_sec
+        last_progress_at = asyncio.get_running_loop().time()
         last_processed = -1
-        scraped = processed = 0
 
-        while True:
+        while asyncio.get_running_loop().time() < deadline:
             progress = await self.repo.get_run_progress(crawl_run_id)
             if not progress:
+                logger.warning("Run '%s' not found while waiting for ingestion.", crawl_run_id)
                 return False
+
             scraped, processed = progress
 
-            if scraped > 0 and processed >= scraped:
+            if scraped == 0:
                 return True
-            now = loop.time()
-            if processed != last_processed:
+
+            if processed >= scraped or (scraped > 0 and (processed / scraped) >= min_ratio):
+                logger.info(
+                    "Ingestion gate reached for '%s': %d/%d processed (ratio: %.2f)",
+                    crawl_run_id, processed, scraped, (processed / scraped) if scraped else 1.0,
+                )
+                return True
+
+            now = asyncio.get_running_loop().time()
+            if processed > last_processed:
                 last_processed = processed
                 last_progress_at = now
-            if now >= deadline or now - last_progress_at >= idle_sec:
-                break
+            elif now - last_progress_at >= idle_sec:
+                if scraped > 0 and (processed / scraped) >= min_ratio:
+                    return True
+                logger.warning(
+                    "Ingestion idle for %.1fs on run '%s' at %d/%d items (below min_ratio %.2f). Ingestion stalled.",
+                    now - last_progress_at, crawl_run_id, processed, scraped, min_ratio,
+                )
+                return False
+
             await asyncio.sleep(poll_sec)
 
-        ok = scraped > 0 and processed >= scraped * min_ratio
-        logger.warning(
-            "Ingestion wait for run '%s' ended: processed %d / scraped %d (%s).",
-            crawl_run_id, processed, scraped, "accepted" if ok else "too low, lifecycle should be skipped",
-        )
-        return ok
+        logger.error("Timed out waiting for ingestion on run '%s' after %.1fs", crawl_run_id, timeout_sec)
+        return False
 
-    async def execute(self, crawl_run_id: str) -> Dict[str, int]:
-        """Apply lifecycle rules to listings for a completed full_sweep crawl run."""
+    async def execute(
+        self,
+        crawl_run_id: str,
+        *,
+        max_missing_count: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Apply lifecycle transitions for a completed crawl run."""
         run = await self.repo.get_run_details(crawl_run_id)
         if not run:
-            raise ValueError(f"Crawl run '{crawl_run_id}' not found.")
-
-        if run["run_mode"] != "full_sweep":
-            logger.info("Run '%s' is %s (not full_sweep). Lifecycle check skipped.", crawl_run_id, run["run_mode"])
+            logger.warning("Crawl run '%s' not found. Lifecycle skipped.", crawl_run_id)
             return {"incremented": 0, "expired": 0}
 
-        if run["lifecycle_applied_at"] is not None:
-            logger.warning("Lifecycle rules already applied for run '%s'.", crawl_run_id)
-            return {"incremented": 0, "expired": 0}
-
-        # Safety gate: only a clean, completed sweep that actually scraped items may expire listings.
-        run_status = run.get("status", "completed")
+        run_status = run.get("status")
         if run_status != "completed":
             logger.warning("Run '%s' has status '%s' (not completed). Lifecycle skipped.", crawl_run_id, run_status)
+            return {"incremented": 0, "expired": 0}
+
+        run_mode = run.get("run_mode")
+        if run_mode != "full_sweep":
+            logger.info("Run '%s' has mode '%s' (not full_sweep). Lifecycle skipped.", crawl_run_id, run_mode)
             return {"incremented": 0, "expired": 0}
 
         items_scraped = run.get("items_scraped")
@@ -103,12 +120,13 @@ class ApplyLifecycleUseCase:
 
         site_id = run["site_id"]
         started_at = run["started_at"]
+        limit = max_missing_count if max_missing_count is not None else self.default_max_missing_count
 
         stats = await self.repo.apply_lifecycle_transaction(
             site_id=site_id,
             started_at=started_at,
             crawl_run_id=crawl_run_id,
-            max_missing_count=3,
+            max_missing_count=limit,
         )
 
         logger.info(
