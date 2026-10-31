@@ -35,7 +35,7 @@ INSERT INTO crawler_configs (
         "query_params": {},
         "body_template": {
           "category": "5deb722db4367252525c1d00",
-          "sort": 1
+          "sort": 2
         }
       },
       "pagination": {
@@ -154,7 +154,8 @@ INSERT INTO crawler_configs (
         },
         "query_params": {
           "region_v2": 13000,
-          "cg": 1000
+          "cg": 1000,
+          "sort": "newest"
         }
       },
       "allowed_domains": ["gateway.chotot.com", "chotot.com", "nhatot.com"],
@@ -261,7 +262,9 @@ INSERT INTO crawler_configs (
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         },
-        "query_params": {}
+        "query_params": {
+          "sort": "date_desc"
+        }
       },
       "pagination": {
         "strategy": "page_number",
@@ -331,13 +334,15 @@ INSERT INTO crawler_configs (
     300,
     '{
       "request": {
-        "url": "https://homedy.com/ban-nha-dat",
+        "url": "https://homedy.com/ban-nha-dat/p{page}",
         "method": "GET",
         "headers": {
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         },
-        "query_params": {}
+        "query_params": {
+          "sort": "new"
+        }
       },
       "pagination": {
         "strategy": "page_number",
@@ -412,7 +417,9 @@ INSERT INTO crawler_configs (
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         },
-        "query_params": {}
+        "query_params": {
+          "sort": "tin-moi-nhat"
+        }
       },
       "pagination": {
         "strategy": "page_number",
@@ -487,7 +494,9 @@ INSERT INTO crawler_configs (
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         },
-        "query_params": {}
+        "query_params": {
+          "sort": "date_desc"
+        }
       },
       "pagination": {
         "strategy": "page_number",
@@ -563,7 +572,9 @@ INSERT INTO crawler_configs (
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         },
-        "query_params": {}
+        "query_params": {
+          "sort": "publish_at_desc"
+        }
       },
       "pagination": {
         "strategy": "page_number",
