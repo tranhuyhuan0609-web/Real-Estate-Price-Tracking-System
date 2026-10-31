@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     hostname: kafka
     ports:
-      - ${KAFKA_HOST_PORT:-16100}:9092
+      - 127.0.0.1:${KAFKA_HOST_PORT:-16100}:9092
     deploy:
       resources:
         limits:
@@ -47,14 +47,14 @@ services:
     entrypoint: [ "sh", "-c" ]
     command:
       - |
-        /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:19092 --topic realestate.raw_events --partitions 4 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:19092 --topic realestate.dlq_events --partitions 2 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:19092 --topic "$$KAFKA_RAW_TOPIC" --partitions 4 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:19092 --topic "$$KAFKA_DLQ_TOPIC" --partitions 2 --replication-factor 1
 
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
     restart: unless-stopped
     ports:
-      - ${KAFKA_UI_HOST_PORT:-16101}:8080
+      - 127.0.0.1:${KAFKA_UI_HOST_PORT:-16101}:8080
     deploy:
       resources:
         limits:
@@ -71,7 +71,7 @@ services:
     restart: unless-stopped
     hostname: mongo
     ports:
-      - ${MONGO_HOST_PORT:-16102}:27017
+      - 127.0.0.1:${MONGO_HOST_PORT:-16102}:27017
     command: mongod --wiredTigerCacheSizeGB 1
     deploy:
       resources:
@@ -95,7 +95,7 @@ services:
     restart: unless-stopped
     hostname: postgres
     ports:
-      - ${POSTGRES_HOST_PORT:-16103}:5432
+      - 127.0.0.1:${POSTGRES_HOST_PORT:-16103}:5432
     command: >
       postgres -c max_connections=40  -c shared_buffers=512MB  -c effective_cache_size=1024MB  -c work_mem=16MB  -c maintenance_work_mem=128MB  -c min_wal_size=1GB  -c max_wal_size=4GB  -c checkpoint_completion_target=0.9  -c wal_buffers=16MB  -c synchronous_commit=on
     deploy:

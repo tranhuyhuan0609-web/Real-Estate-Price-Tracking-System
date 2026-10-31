@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Dict, Optional
 from psycopg.rows import dict_row
@@ -18,6 +19,57 @@ class ApplyLifecycleUseCase:
     def __init__(self, pool: "AsyncConnectionPool") -> None:
         self.pool = pool
 
+    async def wait_for_ingestion(
+        self,
+        crawl_run_id: str,
+        *,
+        timeout_sec: float = 600.0,
+        idle_sec: float = 60.0,
+        poll_sec: float = 5.0,
+        min_ratio: float = 0.95,
+    ) -> bool:
+        """Wait until the Silver/Gold consumers have processed (almost) all items of a crawl run.
+
+        Lifecycle compares listings.last_seen_at with the run start, so it must not run while
+        consumers still have a backlog for this run. Returns True when it is safe to continue:
+        every scraped item was processed, or progress stalled with at least ``min_ratio`` done
+        (a few items may have gone to the DLQ and are never counted as processed).
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_sec
+        last_progress_at = loop.time()
+        last_processed = -1
+        scraped = processed = 0
+
+        while True:
+            async with self.pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "SELECT items_scraped, items_processed FROM crawl_runs WHERE crawl_run_id = %s;",
+                        (crawl_run_id,),
+                    )
+                    row = await cur.fetchone()
+            if not row:
+                return False
+            scraped, processed = int(row[0] or 0), int(row[1] or 0)
+
+            if scraped > 0 and processed >= scraped:
+                return True
+            now = loop.time()
+            if processed != last_processed:
+                last_processed = processed
+                last_progress_at = now
+            if now >= deadline or now - last_progress_at >= idle_sec:
+                break
+            await asyncio.sleep(poll_sec)
+
+        ok = scraped > 0 and processed >= scraped * min_ratio
+        logger.warning(
+            "Ingestion wait for run '%s' ended: processed %d / scraped %d (%s).",
+            crawl_run_id, processed, scraped, "accepted" if ok else "too low, lifecycle should be skipped",
+        )
+        return ok
+
     async def execute(self, crawl_run_id: str) -> Dict[str, int]:
         """Apply lifecycle rules to listings for a completed full_sweep crawl run.
 
@@ -32,7 +84,7 @@ class ApplyLifecycleUseCase:
                 async with conn.cursor(row_factory=dict_row) as cur:
                     # 1. Check crawl run
                     await cur.execute(
-                        "SELECT crawl_run_id, site_id, run_mode, status, started_at, lifecycle_applied_at FROM crawl_runs WHERE crawl_run_id = %s;",
+                        "SELECT crawl_run_id, site_id, run_mode, status, started_at, lifecycle_applied_at, items_scraped FROM crawl_runs WHERE crawl_run_id = %s;",
                         (crawl_run_id,),
                     )
                     run = await cur.fetchone()
@@ -46,6 +98,20 @@ class ApplyLifecycleUseCase:
 
                     if run["lifecycle_applied_at"] is not None:
                         logger.warning("Lifecycle rules already applied for run '%s'.", crawl_run_id)
+                        return {"incremented": 0, "expired": 0}
+
+                    # Safety gate: only a clean, completed sweep that actually scraped items may expire
+                    # listings. A blocked / failed / empty sweep would otherwise mark everything missing.
+                    run_status = run.get("status", "completed")
+                    if run_status != "completed":
+                        logger.warning(
+                            "Run '%s' has status '%s' (not completed). Lifecycle skipped.", crawl_run_id, run_status
+                        )
+                        return {"incremented": 0, "expired": 0}
+
+                    items_scraped = run.get("items_scraped")
+                    if items_scraped is not None and items_scraped <= 0:
+                        logger.warning("Run '%s' scraped 0 items. Lifecycle skipped.", crawl_run_id)
                         return {"incremented": 0, "expired": 0}
 
                     site_id = run["site_id"]

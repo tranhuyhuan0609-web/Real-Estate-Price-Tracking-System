@@ -26,6 +26,11 @@ class GenericApiSpider(Spider):
         self.page_cfg = config.pagination
         self.rate_cfg = config.rate_limit
         self.pages_crawled: int = 0
+        # Crawl health signals read by CrawlSiteUseCase:
+        #   aborted_reason - set when the crawl stopped because of an error (not end of listings)
+        #   exhausted      - True only when the end of the listings was actually reached
+        self.aborted_reason: Optional[str] = None
+        self.exhausted: bool = False
 
     async def _send_request_with_retry(
         self,
@@ -74,6 +79,8 @@ class GenericApiSpider(Spider):
     ) -> AsyncGenerator[Tuple[ParsedListingItem, Dict[str, Any]], None]:
         """Crawl pages up to the page budget for the specified run mode."""
         self.pages_crawled = 0
+        self.aborted_reason = None
+        self.exhausted = False
         mode_str = run_mode.value if isinstance(run_mode, RunMode) else run_mode
         max_pages = self.config.max_pages(mode_str)
         start_page = self.page_cfg.start_page
@@ -135,12 +142,14 @@ class GenericApiSpider(Spider):
 
                 if response is None:
                     logger.warning("Empty response received. Stopping crawl at page %d", current_page)
+                    self.aborted_reason = f"No usable HTTP response at page {current_page} (blocked or server error)"
                     break
 
                 try:
                     payload = response.json()
                 except Exception as exc:
                     logger.error("Failed to parse JSON response on page %d: %s", current_page, exc)
+                    self.aborted_reason = f"Invalid JSON response at page {current_page}: {exc}"
                     break
 
                 self.pages_crawled += 1
@@ -150,6 +159,11 @@ class GenericApiSpider(Spider):
                 stop_items = extract_by_json_path(payload, stop_path)
                 if not stop_items or not isinstance(stop_items, list) or len(stop_items) == 0:
                     logger.info("No items found at stop path '%s' on page %d. Reached end of listings.", stop_path, current_page)
+                    if current_page == start_page:
+                        # An empty very first page is a layout change / block, not a real end of listings
+                        self.aborted_reason = f"No items on first page (stop path '{stop_path}'); possible API change or bot block"
+                    else:
+                        self.exhausted = True
                     break
 
                 # Extract items
@@ -157,6 +171,7 @@ class GenericApiSpider(Spider):
                 items = extract_by_json_path(payload, items_path) if items_path != stop_path else stop_items
 
                 if not items or not isinstance(items, list):
+                    self.aborted_reason = f"Items path '{items_path}' missing or not a list at page {current_page}"
                     break
 
                 for raw_item in items:

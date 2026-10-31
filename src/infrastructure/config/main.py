@@ -16,6 +16,13 @@ class Settings(DatabaseSettings, KafkaSettings, AppSettings):
                 "Bronze and Silver/Gold consumers must use different consumer groups."
             )
 
+        # The services actually deployed (docker-compose) use RAW_WRITER / CLEAN_PROCESSOR groups.
+        # Sharing one group would split the topic between them so each layer misses events.
+        if self.KAFKA_GROUP_RAW_WRITER == self.KAFKA_GROUP_CLEAN_PROCESSOR:
+            raise ValueError(
+                "Raw writer and clean processor consumers must use different consumer groups."
+            )
+
         if self.KAFKA_RAW_TOPIC == self.KAFKA_DLQ_TOPIC:
             raise ValueError("The RAW topic and DLQ topic must be different.")
 

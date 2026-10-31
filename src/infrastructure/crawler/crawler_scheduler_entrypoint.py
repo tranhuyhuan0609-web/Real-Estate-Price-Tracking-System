@@ -51,6 +51,7 @@ class CrawlerSchedulerService:
         run_once: bool = False,
     ) -> None:
         self.settings = load_settings()
+        self._last_full_sweep_slot: Dict[str, tuple] = {}
         self.poll_interval_sec = poll_interval_sec
         self.run_once = run_once
         self.shutdown_event = asyncio.Event()
@@ -99,9 +100,17 @@ class CrawlerSchedulerService:
             schedule_times = cfg.get("schedule_times") or []
 
             # Check full sweep schedule match
+            # schedule_times are HH:MM in UTC. Fire each slot at most once per day: the poll interval
+            # is shorter than a minute, so without this a fast-finishing sweep could re-trigger.
             is_full_sweep = False
-            if schedule_times and any(s == now_hm for s in schedule_times):
+            slot_key = (now_utc.strftime("%Y-%m-%d"), now_hm)
+            if (
+                schedule_times
+                and any(s == now_hm for s in schedule_times)
+                and self._last_full_sweep_slot.get(site_id) != slot_key
+            ):
                 is_full_sweep = True
+                self._last_full_sweep_slot[site_id] = slot_key
 
             # Check interval due
             is_due = False
@@ -139,8 +148,16 @@ class CrawlerSchedulerService:
                     lifecycle_uc = ApplyLifecycleUseCase(pool)
                     if mode == RunMode.FULL_SWEEP:
                         logger.info("Triggering automated lifecycle & view refresh for FULL_SWEEP run '%s'...", run_id)
-                        stats = await lifecycle_uc.execute(run_id)
-                        logger.info("Automated lifecycle completed for '%s': %s", run_id, stats)
+                        # Let the Silver/Gold consumers drain this run's backlog first, otherwise
+                        # listings still waiting in Kafka would be counted as missing.
+                        if await lifecycle_uc.wait_for_ingestion(run_id):
+                            stats = await lifecycle_uc.execute(run_id)
+                            logger.info("Automated lifecycle completed for '%s': %s", run_id, stats)
+                        else:
+                            logger.warning(
+                                "Skipping lifecycle for run '%s': consumers have not ingested enough of its items.",
+                                run_id,
+                            )
                     await lifecycle_uc.refresh_gold_views()
                     logger.info("Materialized views refreshed successfully for run '%s'", run_id)
                 except Exception as life_err:

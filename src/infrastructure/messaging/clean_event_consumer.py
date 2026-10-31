@@ -11,7 +11,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-from aiokafka import AIOKafkaConsumer
+from aiokafka import AIOKafkaConsumer, TopicPartition
 import psycopg_pool
 
 BASE_DIR = Path(__file__).resolve().parents[3]
@@ -50,8 +50,8 @@ class CleanEventProcessorService:
         self.run_once = run_once
         self.shutdown_event = asyncio.Event()
 
-    async def _forward_to_dlq(self, dlq_publisher: AioKafkaEventPublisher, msg: Any, exc: Exception) -> None:
-        """Helper to send a malformed or failed event to the Dead Letter Queue."""
+    async def _forward_to_dlq(self, dlq_publisher: AioKafkaEventPublisher, msg: Any, exc: Exception) -> bool:
+        """Send a malformed or failed event to the Dead Letter Queue. Returns False if that failed."""
         dlq_record = {
             "failed_at": datetime.now(timezone.utc).isoformat(),
             "consumer_group": self.settings.KAFKA_GROUP_CLEAN_PROCESSOR,
@@ -70,8 +70,10 @@ class CleanEventProcessorService:
                 value=dlq_record,
             )
             logger.info("Message at offset %d successfully forwarded to DLQ.", msg.offset)
+            return True
         except Exception as pub_err:
             logger.error("Failed to forward error to DLQ: %s", pub_err)
+            return False
 
     async def run(self) -> None:
         logger.info("Starting Clean Event Processor (Silver & Gold Layers)...")
@@ -123,6 +125,8 @@ class CleanEventProcessorService:
 
                         batch_metrics: Dict[str, Dict[str, int]] = {}
                         batch_count = 0
+                        dlq_forwarded = 0
+                        dlq_failed: List[Any] = []  # messages we could neither ingest nor park in the DLQ
 
                         # 1. Parse and validate messages
                         valid_events: List[RawEventMessage] = []
@@ -138,7 +142,10 @@ class CleanEventProcessorService:
                                         "Validation error at offset %d: %s. Forwarding to DLQ...",
                                         msg.offset, exc, exc_info=True,
                                     )
-                                    await self._forward_to_dlq(dlq_publisher, msg, exc)
+                                    if await self._forward_to_dlq(dlq_publisher, msg, exc) is False:
+                                        dlq_failed.append(msg)
+                                    else:
+                                        dlq_forwarded += 1
 
                         # 2. Batch ingestion into PostgreSQL Silver & Gold
                         processed_results: List[Tuple[RawEventMessage, bool, bool]] = []
@@ -156,7 +163,10 @@ class CleanEventProcessorService:
                                         processed_results.append((event, is_new, price_changed))
                                     except Exception as item_err:
                                         logger.error("Error ingesting listing '%s': %s", event.listing_key, item_err)
-                                        await self._forward_to_dlq(dlq_publisher, msg, item_err)
+                                        if await self._forward_to_dlq(dlq_publisher, msg, item_err) is False:
+                                            dlq_failed.append(msg)
+                                        else:
+                                            dlq_forwarded += 1
 
                         # 3. Aggregate metrics
                         for event, is_new, price_changed in processed_results:
@@ -186,9 +196,25 @@ class CleanEventProcessorService:
                             except Exception as metric_err:
                                 logger.warning("Could not batch update crawl_run metrics for '%s': %s", run_id, metric_err)
 
-                        if batch_count > 0:
+                        if dlq_failed:
+                            # Never commit past a message that is neither in Postgres nor in the DLQ:
+                            # rewind to the earliest such offset per partition so it is retried.
+                            earliest: Dict[Tuple[str, int], int] = {}
+                            for m in dlq_failed:
+                                k = (m.topic, m.partition)
+                                earliest[k] = min(m.offset, earliest.get(k, m.offset))
+                            for (topic, partition), offset in earliest.items():
+                                consumer.seek(TopicPartition(topic, partition), offset)
+                            logger.error("%d message(s) could not be stored or sent to the DLQ; rewound for retry.", len(dlq_failed))
+                            await asyncio.sleep(1.0)
+                        elif batch_count + dlq_forwarded > 0:
+                            # Also commit when everything went to the DLQ, otherwise those offsets
+                            # are redelivered (and duplicated in the DLQ) after a restart.
                             await consumer.commit()
-                            logger.info("Committed batch of %d clean events to PostgreSQL (total: %d).", batch_count, total_processed)
+                            logger.info(
+                                "Committed batch (%d clean events, %d to DLQ) (total: %d).",
+                                batch_count, dlq_forwarded, total_processed,
+                            )
 
                     except asyncio.CancelledError:
                         break

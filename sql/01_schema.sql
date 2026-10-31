@@ -140,7 +140,7 @@ CREATE TABLE IF NOT EXISTS listing_price_history (
     price_vnd NUMERIC(18, 0) NOT NULL,
     price_per_m2 NUMERIC(14, 0),
     price_diff_vnd NUMERIC(18, 0) NOT NULL DEFAULT 0,
-    price_diff_percent NUMERIC(6, 2) NOT NULL DEFAULT 0,
+    price_diff_percent NUMERIC(12, 2) NOT NULL DEFAULT 0,
     price_status VARCHAR(20) NOT NULL,
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_history_price_positive CHECK (price_vnd > 0 AND (price_per_m2 IS NULL OR price_per_m2 > 0)),

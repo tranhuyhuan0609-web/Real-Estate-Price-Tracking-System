@@ -122,13 +122,34 @@ class CrawlSiteUseCase:
                 pages_crawled=pages_crawled,
             )
 
+            # Crawl health gate. A crawl that was blocked, errored out mid-way or hit the page cap
+            # must not look like a clean full sweep, otherwise lifecycle would wrongly expire listings.
+            is_full_sweep = mode_str == RunMode.FULL_SWEEP.value
+            aborted_reason = getattr(spider, "aborted_reason", None)
+            truncated = getattr(spider, "exhausted", None) is False and not aborted_reason
+            problem: Optional[str] = None
+            if aborted_reason:
+                problem = f"Crawl aborted: {aborted_reason}"
+            elif truncated:
+                problem = "Crawl stopped at the page limit before reaching the end of listings."
+
             if items_count == 0:
                 warning_msg = f"Warning: 0 items scraped for site '{site_id}'. Possible layout change or bot block."
                 logger.warning(warning_msg)
+                # A full sweep that saw nothing is a failure; an empty incremental run stays a warning.
                 await self.crawl_run_repo.complete_run(
                     crawl_run_id=crawl_run_id,
-                    status=CrawlRunStatus.COMPLETED.value,
+                    status=(CrawlRunStatus.FAILED if is_full_sweep else CrawlRunStatus.COMPLETED).value,
                     error_message=warning_msg,
+                )
+            elif problem:
+                logger.warning("Crawl run '%s' for site '%s': %s", crawl_run_id, site_id, problem)
+                # Only full sweeps need to be flagged failed (they drive lifecycle expiry);
+                # incremental runs keep their already-published items and just carry the warning.
+                await self.crawl_run_repo.complete_run(
+                    crawl_run_id=crawl_run_id,
+                    status=(CrawlRunStatus.FAILED if is_full_sweep else CrawlRunStatus.COMPLETED).value,
+                    error_message=problem,
                 )
             else:
                 await self.crawl_run_repo.complete_run(

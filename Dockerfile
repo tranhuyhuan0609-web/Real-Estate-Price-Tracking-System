@@ -11,5 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "-m", "src.infrastructure.crawler.crawler_scheduler_entrypoint"]
+# Run as an unprivileged user
+RUN useradd --system --no-create-home appuser
+USER appuser
 
+CMD ["python", "-m", "src.infrastructure.crawler.crawler_scheduler_entrypoint"]

@@ -1,6 +1,7 @@
 """Asynchronous Kafka publisher implementation using aiokafka."""
 
 import asyncio
+import inspect
 import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
@@ -21,6 +22,8 @@ class AioKafkaEventPublisher(EventPublisher):
         if self._producer is None:
             self._producer = AIOKafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,
+                acks="all",
+                enable_idempotence=True,
                 value_serializer=lambda v: json.dumps(v, default=str).encode("utf-8"),
                 key_serializer=lambda k: k.encode("utf-8") if isinstance(k, str) else k,
             )
@@ -46,9 +49,10 @@ class AioKafkaEventPublisher(EventPublisher):
         if self._producer is None:
             await self.start()
         assert self._producer is not None
-        tasks = [
-            self._producer.send(topic=topic, key=k, value=v)
-            for k, v in events
-        ]
-        await asyncio.gather(*tasks)
+        # send() only enqueues the record and returns a future that resolves when the broker has
+        # acknowledged it. Await those futures too, otherwise delivery errors are silently lost.
+        delivery_futures = await asyncio.gather(
+            *[self._producer.send(topic=topic, key=k, value=v) for k, v in events]
+        )
+        await asyncio.gather(*[f for f in delivery_futures if inspect.isawaitable(f)])
 

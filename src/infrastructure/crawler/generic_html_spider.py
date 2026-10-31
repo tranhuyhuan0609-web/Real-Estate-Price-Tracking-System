@@ -31,6 +31,9 @@ class GenericHtmlSpider(Spider):
         self.rate_cfg = config.rate_limit
         self.detail_cfg = config.detail_page
         self.pages_crawled: int = 0
+        # Crawl health signals read by CrawlSiteUseCase (see GenericApiSpider)
+        self.aborted_reason: Optional[str] = None
+        self.exhausted: bool = False
 
     def _extract_selector_value(self, context: Selector, selector_str: str, is_list: bool = False) -> Any:
         """Extract text or attribute using CSS, XPath, or embedded JSON selector."""
@@ -157,6 +160,8 @@ class GenericHtmlSpider(Spider):
     ) -> AsyncGenerator[Tuple[ParsedListingItem, Dict[str, Any]], None]:
         """Crawl HTML pages and extract listing items according to CrawlerConfig."""
         self.pages_crawled = 0
+        self.aborted_reason = None
+        self.exhausted = False
         mode_str = run_mode.value if isinstance(run_mode, RunMode) else run_mode
         max_pages = self.config.max_pages(mode_str)
         start_page = self.page_cfg.start_page
@@ -182,7 +187,7 @@ class GenericHtmlSpider(Spider):
         if proxy_url:
             client_kwargs["proxy"] = proxy_url
 
-        concurrency = max(self.rate_cfg.concurrent_requests, 5)
+        concurrency = max(1, self.rate_cfg.concurrent_requests)
         detail_semaphore = asyncio.Semaphore(concurrency)
 
         async with httpx.AsyncClient(**client_kwargs) as client:
@@ -195,6 +200,7 @@ class GenericHtmlSpider(Spider):
 
                 if response is None:
                     logger.warning("No response received for %s. Stopping crawl at page %d", url, current_page)
+                    self.aborted_reason = f"No usable HTTP response at page {current_page} (blocked or server error)"
                     break
 
                 self.pages_crawled += 1
@@ -223,6 +229,11 @@ class GenericHtmlSpider(Spider):
 
                 if not card_nodes or len(card_nodes) == 0:
                     logger.info("No items matched selector '%s' on page %d. Reached end of listings.", items_path, current_page)
+                    if current_page == start_page:
+                        # An empty very first page is a layout change / block, not a real end of listings
+                        self.aborted_reason = f"No items matched '{items_path}' on first page; possible layout change or bot block"
+                    else:
+                        self.exhausted = True
                     break
 
                 page_raw_items: List[Dict[str, Any]] = []
