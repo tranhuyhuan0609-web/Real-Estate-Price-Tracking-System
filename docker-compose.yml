@@ -1,6 +1,6 @@
 services:
   kafka:
-    image: apache/kafka:3.9.0
+    image: apache/kafka:3.7.0
     restart: unless-stopped
     hostname: kafka
     ports:
@@ -36,18 +36,19 @@ services:
       start_period: 20s
 
   kafka-setup:
-    image: apache/kafka:3.9.0
+    image: apache/kafka:3.7.0
     container_name: kafka-setup-v1
     depends_on:
       kafka:
         condition: service_healthy
     environment:
-      KAFKA_RAW_TOPIC: ${KAFKA_RAW_TOPIC}
-      KAFKA_DLQ_TOPIC: ${KAFKA_DLQ_TOPIC}
+      KAFKA_RAW_TOPIC: ${KAFKA_RAW_TOPIC:-realestate.raw_events}
+      KAFKA_DLQ_TOPIC: ${KAFKA_DLQ_TOPIC:-realestate.dlq_events}
     entrypoint: [ "sh", "-c" ]
-    command: |
-      /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:19092 --topic $$KAFKA_RAW_TOPIC --partitions 4 --replication-factor 1
-      /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:19092 --topic $$KAFKA_DLQ_TOPIC --partitions 2 --replication-factor 1
+    command:
+      - |
+        /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:19092 --topic realestate.raw_events --partitions 4 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:19092 --topic realestate.dlq_events --partitions 2 --replication-factor 1
 
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
@@ -65,32 +66,8 @@ services:
       kafka:
         condition: service_healthy
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    hostname: redis
-    ports:
-      - ${REDIS_HOST_PORT:-16104}:6379
-    command: >
-      redis-server
-      --appendonly yes
-      --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-
   mongo:
-    image: mongo:7
+    image: mongo:7.0
     restart: unless-stopped
     hostname: mongo
     ports:
@@ -107,7 +84,7 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "mongosh --port 27017 -u $$MONGO_INITDB_ROOT_USERNAME -p $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping')\" --quiet"]
+      test: [ "CMD-SHELL", "mongosh --port 27017 -u $$MONGO_INITDB_ROOT_USERNAME -p $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping')\" --quiet" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -120,16 +97,7 @@ services:
     ports:
       - ${POSTGRES_HOST_PORT:-16103}:5432
     command: >
-      postgres -c max_connections=40 
-      -c shared_buffers=512MB 
-      -c effective_cache_size=1024MB 
-      -c work_mem=16MB 
-      -c maintenance_work_mem=128MB 
-      -c min_wal_size=1GB 
-      -c max_wal_size=4GB 
-      -c checkpoint_completion_target=0.9 
-      -c wal_buffers=16MB 
-      -c synchronous_commit=on
+      postgres -c max_connections=40  -c shared_buffers=512MB  -c effective_cache_size=1024MB  -c work_mem=16MB  -c maintenance_work_mem=128MB  -c min_wal_size=1GB  -c max_wal_size=4GB  -c checkpoint_completion_target=0.9  -c wal_buffers=16MB  -c synchronous_commit=on
     deploy:
       resources:
         limits:
@@ -140,15 +108,101 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./sql/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./sql/02_seed_configs.sql:/docker-entrypoint-initdb.d/02_seed_configs.sql:ro
+      - ./sql/03_views.sql:/docker-entrypoint-initdb.d/03_views.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
 
+  crawler-scheduler:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "src.infrastructure.crawler.crawler_scheduler_entrypoint"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:?POSTGRES_USER is required}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - POSTGRES_DB=${POSTGRES_DB:?POSTGRES_DB is required}
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:19092
+      - KAFKA_RAW_TOPIC=${KAFKA_RAW_TOPIC:-realestate.raw_events}
+      - KAFKA_DLQ_TOPIC=${KAFKA_DLQ_TOPIC:-realestate.dlq_events}
+
+  raw-event-writer:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "src.infrastructure.messaging.raw_event_consumer"]
+    deploy:
+      replicas: 4
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    environment:
+      - MONGO_HOST=mongo
+      - MONGO_PORT=27017
+      - MONGO_USER=${MONGO_USER:?MONGO_USER is required}
+      - MONGO_PASSWORD=${MONGO_PASSWORD:?MONGO_PASSWORD is required}
+      - MONGO_DB=${MONGO_DB:?MONGO_DB is required}
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:19092
+      - KAFKA_RAW_TOPIC=${KAFKA_RAW_TOPIC:-realestate.raw_events}
+      - KAFKA_DLQ_TOPIC=${KAFKA_DLQ_TOPIC:-realestate.dlq_events}
+      - KAFKA_GROUP_RAW_WRITER=${KAFKA_GROUP_RAW_WRITER:-bds_bronze_mongo_group}
+
+  dlq-event-writer:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "src.infrastructure.messaging.dlq_event_consumer"]
+    deploy:
+      replicas: 1
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    environment:
+      - MONGO_HOST=mongo
+      - MONGO_PORT=27017
+      - MONGO_USER=${MONGO_USER:?MONGO_USER is required}
+      - MONGO_PASSWORD=${MONGO_PASSWORD:?MONGO_PASSWORD is required}
+      - MONGO_DB=${MONGO_DB:?MONGO_DB is required}
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:19092
+      - KAFKA_DLQ_TOPIC=${KAFKA_DLQ_TOPIC:-realestate.dlq_events}
+      - KAFKA_GROUP_DLQ_WRITER=${KAFKA_GROUP_DLQ_WRITER:-bds_dlq_writer_group}
+
+  clean-event-processor:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "src.infrastructure.messaging.clean_event_consumer"]
+    deploy:
+      replicas: 4
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:?POSTGRES_USER is required}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - POSTGRES_DB=${POSTGRES_DB:?POSTGRES_DB is required}
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:19092
+      - KAFKA_RAW_TOPIC=${KAFKA_RAW_TOPIC:-realestate.raw_events}
+      - KAFKA_DLQ_TOPIC=${KAFKA_DLQ_TOPIC:-realestate.dlq_events}
+      - KAFKA_GROUP_CLEAN_PROCESSOR=${KAFKA_GROUP_CLEAN_PROCESSOR:-bds_silver_gold_pg_group}
+
 volumes:
   kafka_data:
   mongo_data:
   postgres_data:
-  redis_data:
