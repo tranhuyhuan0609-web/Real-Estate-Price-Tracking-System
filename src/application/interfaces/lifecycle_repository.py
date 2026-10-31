@@ -35,3 +35,4 @@ class LifecycleRepository(ABC):
     async def refresh_gold_views(self) -> None:
         """Refresh analytical materialized views concurrently."""
         pass
+

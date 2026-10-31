@@ -97,3 +97,4 @@ class PgLifecycleRepository(LifecycleRepository):
                 except Exception as exc:
                     logger.error("Failed to refresh materialized views concurrently: %s", exc)
                     raise
+
