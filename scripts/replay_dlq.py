@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -65,7 +66,7 @@ async def replay_from_mongo(
         if site_id:
             query["$or"] = [
                 {"raw_payload.site_id": site_id},
-                {"raw_key": {"$regex": f"^{site_id}_"}},
+                {"raw_key": {"$regex": f"^{re.escape(site_id)}_"}},
             ]
 
         cursor = collection.find(query).limit(limit)

@@ -31,6 +31,8 @@ class GenericApiSpider(Spider):
         #   exhausted      - True only when the end of the listings was actually reached
         self.aborted_reason: Optional[str] = None
         self.exhausted: bool = False
+        self.semaphore = asyncio.Semaphore(self.rate_cfg.concurrent_requests)
+        self._proxy_index = 0
 
     async def _send_request_with_retry(
         self,
@@ -44,16 +46,41 @@ class GenericApiSpider(Spider):
         retries = self.rate_cfg.retry_times
         timeout = self.rate_cfg.timeout_sec
 
+        proxies = (
+            list(self.config.proxy_settings.proxies)
+            if self.config.proxy_settings and self.config.proxy_settings.enabled and self.config.proxy_settings.proxies
+            else []
+        )
+
         for attempt in range(1 + retries):
+            # Rotate proxy per retry if proxy list is configured
+            current_proxy = None
+            if proxies:
+                current_proxy = proxies[(self._proxy_index + attempt) % len(proxies)]
+
             try:
-                response = await client.request(
-                    method=method,
-                    url=url,
-                    headers=headers,
-                    params=params,
-                    json=json_body,
-                    timeout=timeout,
-                )
+                async with self.semaphore:
+                    # If proxy rotation is requested per attempt
+                    if current_proxy and current_proxy != getattr(client, "_current_proxy", None):
+                        async with httpx.AsyncClient(proxy=current_proxy, headers=headers, follow_redirects=True) as rot_client:
+                            response = await rot_client.request(
+                                method=method,
+                                url=url,
+                                headers=headers,
+                                params=params,
+                                json=json_body,
+                                timeout=timeout,
+                            )
+                    else:
+                        response = await client.request(
+                            method=method,
+                            url=url,
+                            headers=headers,
+                            params=params,
+                            json=json_body,
+                            timeout=timeout,
+                        )
+
                 if response.status_code == 200:
                     return response
                 elif response.status_code in (429, 500, 502, 503, 504):
@@ -61,7 +88,8 @@ class GenericApiSpider(Spider):
                         "Attempt %d/%d for %s received status %d. Backing off...",
                         attempt + 1, retries + 1, url, response.status_code
                     )
-                    await asyncio.sleep(2.0 * (attempt + 1))
+                    if attempt < retries:
+                        await asyncio.sleep(2.0 * (attempt + 1))
                 else:
                     logger.error("HTTP error %d for URL: %s", response.status_code, url)
                     return None

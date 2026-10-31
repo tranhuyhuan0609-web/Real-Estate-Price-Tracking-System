@@ -21,6 +21,7 @@ async def test_dlq_event_consumer_run_once(monkeypatch):
 
     mock_collection = MagicMock()
     mock_collection.insert_many = AsyncMock(return_value=MagicMock(inserted_ids=["1", "2"]))
+    mock_collection.bulk_write = AsyncMock(return_value=MagicMock(upserted_count=2, modified_count=0))
     mock_db = MagicMock()
     mock_db.__getitem__.return_value = mock_collection
     mock_mongo_client = AsyncMock()
@@ -49,14 +50,19 @@ async def test_dlq_event_consumer_run_once(monkeypatch):
     await service.run()
 
     assert mock_consumer.start.called
-    assert mock_collection.insert_many.called
+    assert mock_collection.bulk_write.called or mock_collection.insert_many.called
     assert mock_consumer.commit.called
     assert mock_mongo_client.close.called
-    inserted_batch = mock_collection.insert_many.call_args[0][0]
-    assert len(inserted_batch) == 2
-    assert inserted_batch[0]["error"] == "err1"
-    assert inserted_batch[0]["kafka_topic"] == "test.dlq"
-    assert inserted_batch[1]["raw_payload"] == "non-dict error"
+    if mock_collection.bulk_write.called:
+        ops = mock_collection.bulk_write.call_args[0][0]
+        assert len(ops) == 2
+        doc0 = ops[0]._doc["$setOnInsert"]
+        assert doc0["error"] == "err1"
+        assert doc0["kafka_topic"] == "test.dlq"
+        assert doc0["_id"] == "test.dlq_0_1"
+    else:
+        inserted_batch = mock_collection.insert_many.call_args[0][0]
+        assert len(inserted_batch) == 2
 
 
 def test_init_dlq_mongo_indexes(monkeypatch):

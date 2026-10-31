@@ -150,8 +150,24 @@ class RawEventConsumerService:
                                     dlq_forwarded += 1
 
                     if batch_events:
-                        await use_case.process_batch(batch_events)
-                        total_ingested += len(batch_events)
+                        try:
+                            await use_case.process_batch(batch_events)
+                            total_ingested += len(batch_events)
+                        except Exception as storage_err:
+                            logger.error(
+                                "Failed to process Bronze batch into MongoDB: %s. Rewinding offset to retry...",
+                                storage_err,
+                            )
+                            # Rewind consumer to earliest offset of this poll batch so nothing is lost
+                            earliest_rewind: Dict[Tuple[str, int], int] = {}
+                            for tp, messages in records.items():
+                                for msg in messages:
+                                    k = (msg.topic, msg.partition)
+                                    earliest_rewind[k] = min(msg.offset, earliest_rewind.get(k, msg.offset))
+                            for (topic, partition), offset in earliest_rewind.items():
+                                consumer.seek(TopicPartition(topic, partition), offset)
+                            await asyncio.sleep(1.0)
+                            continue
 
                     if dlq_failed:
                         # Never commit past a message that failed both Bronze storage and DLQ

@@ -584,3 +584,34 @@ def test_infer_property_type_and_category_fallbacks(seed_row):
 
 
 
+
+
+def test_strict_phone_parsing():
+    from src.infrastructure.crawler.parser import parse_vietnamese_phone
+    # Valid mobile
+    assert parse_vietnamese_phone("0901234567") == "0901234567"
+    assert parse_vietnamese_phone("+84 901 234 567") == "0901234567"
+    assert parse_vietnamese_phone("84981234567") == "0981234567"
+    assert parse_vietnamese_phone("tel:0378111222") == "0378111222"
+    # Valid landline
+    assert parse_vietnamese_phone("02838123456") == "02838123456"
+    # Invalid / garbage
+    assert parse_vietnamese_phone("123456789") is None
+    assert parse_vietnamese_phone("0000000000") is None
+    assert parse_vietnamese_phone("0123456789") is None
+    assert parse_vietnamese_phone("abcdefghij") is None
+
+
+def test_strict_area_parsing():
+    from src.infrastructure.crawler.parser import parse_vietnamese_area
+    # Valid pure numbers
+    assert parse_vietnamese_area(85.5) == 85.5
+    assert parse_vietnamese_area("100") == 100.0
+    assert parse_vietnamese_area("75.25") == 75.25
+    # Valid with units
+    assert parse_vietnamese_area("85.5 m2") == 85.5
+    assert parse_vietnamese_area("120 m²") == 120.0
+    assert parse_vietnamese_area("60 mét vuông") == 60.0
+    # Text without area unit should not extract arbitrary numbers
+    assert parse_vietnamese_area("mặt tiền 5m, 3 tầng") is None
+    assert parse_vietnamese_area("căn hộ 2 phòng ngủ") is None

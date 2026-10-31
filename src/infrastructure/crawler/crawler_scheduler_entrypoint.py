@@ -79,10 +79,25 @@ class CrawlerSchedulerService:
             WHERE enabled = TRUE
             ORDER BY site_id
         """
+        recent_sweeps: Dict[str, datetime] = {}
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(query)
                 configs = await cur.fetchall()
+
+                # Query recent full sweep runs in the last 24h to persist slot tracking across restarts
+                try:
+                    await cur.execute(
+                        "SELECT site_id, MAX(started_at) as last_sweep FROM crawl_runs "
+                        "WHERE run_mode = 'full_sweep' AND started_at >= NOW() - INTERVAL '24 hours' "
+                        "GROUP BY site_id"
+                    )
+                    sw_rows = await cur.fetchall()
+                    for r in sw_rows:
+                        if isinstance(r, dict) and r.get("last_sweep"):
+                            recent_sweeps[r["site_id"]] = r["last_sweep"]
+                except Exception as sw_err:
+                    logger.warning("Could not fetch recent full_sweep runs from DB: %s", sw_err)
 
         running_in_db = await self._get_active_running_sites(pool)
         now_utc = datetime.now(timezone.utc)
@@ -104,10 +119,13 @@ class CrawlerSchedulerService:
             # is shorter than a minute, so without this a fast-finishing sweep could re-trigger.
             is_full_sweep = False
             slot_key = (now_utc.strftime("%Y-%m-%d"), now_hm)
+            last_db_sweep = recent_sweeps.get(site_id)
+            ran_recently_in_db = last_db_sweep and (now_utc - last_db_sweep).total_seconds() < 3000
             if (
                 schedule_times
                 and any(s == now_hm for s in schedule_times)
                 and self._last_full_sweep_slot.get(site_id) != slot_key
+                and not ran_recently_in_db
             ):
                 is_full_sweep = True
                 self._last_full_sweep_slot[site_id] = slot_key
@@ -181,8 +199,10 @@ class CrawlerSchedulerService:
             try:
                 async with pool.connection() as conn:
                     async with conn.cursor() as cur:
+                        # Only mark runs that have been running for more than 2 hours as stale/failed
                         await cur.execute(
-                            "UPDATE crawl_runs SET status = 'failed', error_message = 'Interrupted by scheduler restart' WHERE status = 'running'"
+                            "UPDATE crawl_runs SET status = 'failed', error_message = 'Interrupted: timed out running session on restart' "
+                            "WHERE status = 'running' AND started_at < NOW() - INTERVAL '2 hours'"
                         )
                         if cur.rowcount > 0:
                             logger.info("Cleaned up %d stale running crawl runs on startup.", cur.rowcount)

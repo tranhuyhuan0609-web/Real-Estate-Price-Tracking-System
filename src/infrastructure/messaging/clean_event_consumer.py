@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from aiokafka import AIOKafkaConsumer, TopicPartition
+import psycopg
 import psycopg_pool
 
 BASE_DIR = Path(__file__).resolve().parents[3]
@@ -49,6 +50,29 @@ class CleanEventProcessorService:
         self.batch_size = batch_size
         self.run_once = run_once
         self.shutdown_event = asyncio.Event()
+
+    def stop(self) -> None:
+        """Signal the consumer loop to exit."""
+        logger.info("Shutdown signal received for Clean Event Processor.")
+        self.shutdown_event.set()
+
+    def _is_data_poison_pill(self, exc: Exception) -> bool:
+        """Return True if the error is due to bad data (should go to DLQ).
+
+        Transient infrastructure / connection errors (e.g. database down, pool timeout)
+        return False so the consumer rewinds and retries without flooding the DLQ.
+        """
+        if isinstance(exc, (ValueError, TypeError)):
+            return True
+        # Psycopg DataError, IntegrityError, ProgrammingError (syntax/schema)
+        if isinstance(exc, (psycopg.DataError, psycopg.IntegrityError, psycopg.ProgrammingError)):
+            return True
+        # Check by class name in case psycopg exception is wrapped
+        err_type = type(exc).__name__
+        if err_type in ("DataError", "IntegrityError", "NumericValueOutOfRange", "StringDataRightTruncation", "CheckViolation", "NotNullViolation"):
+            return True
+        # Connection/Operational errors must NOT go to DLQ
+        return False
 
     async def _forward_to_dlq(self, dlq_publisher: AioKafkaEventPublisher, msg: Any, exc: Exception) -> bool:
         """Send a malformed or failed event to the Dead Letter Queue. Returns False if that failed."""
@@ -162,11 +186,18 @@ class CleanEventProcessorService:
                                         is_new, price_changed = await use_case.execute(event, update_crawl_run=False)
                                         processed_results.append((event, is_new, price_changed))
                                     except Exception as item_err:
-                                        logger.error("Error ingesting listing '%s': %s", event.listing_key, item_err)
-                                        if await self._forward_to_dlq(dlq_publisher, msg, item_err) is False:
-                                            dlq_failed.append(msg)
+                                        if self._is_data_poison_pill(item_err):
+                                            logger.error("Data poison pill ingesting '%s': %s. Forwarding to DLQ...", event.listing_key, item_err)
+                                            if await self._forward_to_dlq(dlq_publisher, msg, item_err) is False:
+                                                dlq_failed.append(msg)
+                                            else:
+                                                dlq_forwarded += 1
                                         else:
-                                            dlq_forwarded += 1
+                                            logger.warning(
+                                                "Transient DB/connection error ingesting '%s': %s. Rewinding for retry...",
+                                                event.listing_key, item_err,
+                                            )
+                                            dlq_failed.append(msg)
 
                         # 3. Aggregate metrics
                         for event, is_new, price_changed in processed_results:

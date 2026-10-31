@@ -378,7 +378,7 @@ class CrawlerConfig(StrictBaseModel):
 
     @model_validator(mode="after")
     def validate_crawler_type_and_paths(self) -> CrawlerConfig:
-        if self.crawler_type == "rest_api":
+        if self.crawler_type in ("rest_api", "graphql"):
             _validate_path(self.response_mapping.items_path, "items_path")
             for name, path in self.response_mapping.fields.items():
                 _validate_path(path, f"fields[{name!r}]")

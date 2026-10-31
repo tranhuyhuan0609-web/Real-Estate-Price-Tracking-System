@@ -23,8 +23,8 @@ def mock_env(monkeypatch):
     monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:19092")
     monkeypatch.setenv("KAFKA_RAW_TOPIC", "realestate.raw_events")
     monkeypatch.setenv("KAFKA_DLQ_TOPIC", "realestate.dlq_events")
-    monkeypatch.setenv("KAFKA_GROUP_BRONZE", "bds_bronze_mongo_group")
-    monkeypatch.setenv("KAFKA_GROUP_SILVER_GOLD", "bds_silver_gold_pg_group")
+    monkeypatch.setenv("KAFKA_GROUP_RAW_WRITER", "bds_bronze_mongo_group")
+    monkeypatch.setenv("KAFKA_GROUP_CLEAN_PROCESSOR", "bds_silver_gold_pg_group")
     monkeypatch.setenv("CRAWLER_LOG_LEVEL", "INFO")
 
 
@@ -41,7 +41,7 @@ def test_settings_load_successfully():
     assert settings.MONGO_PORT == 27017
     assert settings.POSTGRES_USER == "huyhuan"
     assert settings.KAFKA_RAW_TOPIC == "realestate.raw_events"
-    assert settings.KAFKA_GROUP_BRONZE == "bds_bronze_mongo_group"
+    assert settings.KAFKA_GROUP_RAW_WRITER == "bds_bronze_mongo_group"
     assert settings.CRAWLER_LOG_LEVEL == "INFO"
 
 
@@ -58,8 +58,8 @@ def test_postgres_and_mongo_dsn_generation(monkeypatch):
 
 def test_duplicate_consumer_groups_raise_error(monkeypatch):
     """Test that identical bronze and silver/gold consumer groups are disallowed."""
-    monkeypatch.setenv("KAFKA_GROUP_BRONZE", "same_group")
-    monkeypatch.setenv("KAFKA_GROUP_SILVER_GOLD", "same_group")
+    monkeypatch.setenv("KAFKA_GROUP_RAW_WRITER", "same_group")
+    monkeypatch.setenv("KAFKA_GROUP_CLEAN_PROCESSOR", "same_group")
 
     with pytest.raises(ValidationError, match="must use different consumer groups"):
         Settings()

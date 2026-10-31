@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 from aiokafka import AIOKafkaConsumer
-from pymongo import AsyncMongoClient
+from pymongo import AsyncMongoClient, UpdateOne
 from pymongo.errors import PyMongoError
 
 BASE_DIR = Path(__file__).resolve().parents[3]
@@ -93,10 +93,10 @@ class DLQEventConsumerService:
             if not batch:
                 return
             count = len(batch)
-            to_insert = list(batch)
-            logger.info("Flushing batch of %d DLQ events to MongoDB dlq_events...", count)
+            ops = [UpdateOne({"_id": d.get("_id") or f"{d.get('kafka_topic', 'dlq')}_{d.get('kafka_partition', 0)}_{d.get('kafka_offset', i)}"}, {"$setOnInsert": d}, upsert=True) for i, d in enumerate(batch)]
+            logger.info("Flushing batch of %d DLQ events to MongoDB dlq_events (idempotent bulk_write)...", count)
             try:
-                await collection.insert_many(to_insert, ordered=False)
+                await collection.bulk_write(ops, ordered=False)
             except PyMongoError as err:
                 logger.error("Failed to insert DLQ batch into MongoDB: %s", err)
                 raise
@@ -135,6 +135,7 @@ class DLQEventConsumerService:
                             doc.setdefault("kafka_topic", msg.topic)
                             doc.setdefault("kafka_partition", msg.partition)
                             doc.setdefault("kafka_offset", msg.offset)
+                            doc["_id"] = f"{msg.topic}_{msg.partition}_{msg.offset}"
                             batch.append(doc)
 
                     now = asyncio.get_running_loop().time()

@@ -10,13 +10,14 @@ SELECT
     l.property_type,
     COUNT(l.listing_key) AS total_active_listings,
     ROUND(AVG(l.current_price_per_m2), 0) AS avg_price_per_m2_vnd,
+    ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY l.current_price_per_m2)::NUMERIC, 0) AS median_price_per_m2_vnd,
     ROUND(MIN(l.current_price_per_m2), 0) AS min_price_per_m2_vnd,
     ROUND(MAX(l.current_price_per_m2), 0) AS max_price_per_m2_vnd,
     NOW() AS refreshed_at
 FROM listings l
 JOIN listing_details d ON l.listing_key = d.listing_key
 WHERE l.status = 'active' 
-  AND l.current_price_per_m2 > 0
+  AND l.current_price_per_m2 BETWEEN 1000000 AND 2000000000
   AND d.city_name IS NOT NULL
 GROUP BY 
     d.city_name,

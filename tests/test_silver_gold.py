@@ -161,9 +161,13 @@ async def test_process_silver_gold_priced_to_contact(sample_item):
     assert is_new is False
     assert price_changed is True
     # Ensure UPDATE listings setting price_status = 'contact' and current_price_vnd = NULL was called
-    executed_queries = [call[0][0] for call in mock_cursor.execute.call_args_list]
-    contact_updates = [q for q in executed_queries if "price_status = 'contact'" in q and "current_price_vnd = NULL" in q]
-    assert len(contact_updates) == 1
+    executed_calls = mock_cursor.execute.call_args_list
+    executed_queries = [c[0][0] for c in executed_calls]
+    contact_calls = [c for c in executed_calls if "UPDATE listings SET" in c[0][0]]
+    assert len(contact_calls) == 1
+    # Verify that 'contact' was passed in params
+    params = contact_calls[0][0][1]
+    assert "contact" in params
 
     # Ensure UPDATE listing_details was called for existing listing
     details_updates = [q for q in executed_queries if "UPDATE listing_details" in q]

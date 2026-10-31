@@ -71,12 +71,12 @@ class PgListingRepository(ListingRepository):
             initial_status = "contact" if (item.current_price_vnd is None or item.current_price_vnd <= 0) else "initial"
             insert_listing_query = """
                 INSERT INTO listings (
-                    listing_key, property_fingerprint, source, external_id, external_code,
+                    listing_key, property_fingerprint, source, external_id,
                     advertiser_id, status, missing_count, first_seen_at, last_seen_at, published_at,
                     category, property_type, area_m2, facade_m, depth_m,
                     current_price_vnd, current_price_per_m2, price_status, price_changed_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
                     %s, 'active', 0, NOW(), NOW(), %s,
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, NOW()
@@ -85,7 +85,7 @@ class PgListingRepository(ListingRepository):
             await cur.execute(
                 insert_listing_query,
                 (
-                    item.listing_key, item.property_fingerprint, item.source, item.external_id, item.external_code,
+                    item.listing_key, item.property_fingerprint, item.source, item.external_id,
                     advertiser_id, item.published_at,
                     item.category.value, item.property_type.value, item.area_m2, item.facade_m, item.depth_m,
                     item.current_price_vnd, item.current_price_per_m2, initial_status,
@@ -130,45 +130,66 @@ class PgListingRepository(ListingRepository):
             # Existing listing: check price evolution
             old_price = existing["current_price_vnd"]
             eval_res = evaluate_price_change(old_price, item.current_price_vnd)
+
+            update_price = False
+            new_price_vnd = existing.get("current_price_vnd")
+            new_price_m2 = existing.get("current_price_per_m2")
+            new_price_status = existing.get("price_status")
+
             if eval_res.price_status in (PriceStatus.INCREASED, PriceStatus.DECREASED, PriceStatus.INITIAL) and item.current_price_vnd and item.current_price_vnd > 0:
                 price_changed = True
-                update_listing_query = """
-                    UPDATE listings SET
-                        last_seen_at = NOW(),
-                        ended_at = NULL,
-                        missing_count = 0,
-                        status = 'active',
-                        advertiser_id = COALESCE(%s, advertiser_id),
-                        published_at = COALESCE(%s, published_at),
-                        property_fingerprint = %s,
-                        property_type = %s,
-                        category = %s,
-                        area_m2 = COALESCE(%s, area_m2),
-                        facade_m = COALESCE(%s, facade_m),
-                        depth_m = COALESCE(%s, depth_m),
-                        current_price_vnd = %s,
-                        current_price_per_m2 = %s,
-                        price_status = %s,
-                        price_changed_at = NOW()
-                    WHERE listing_key = %s;
-                """
-                await cur.execute(
-                    update_listing_query,
-                    (
-                        advertiser_id,
-                        item.published_at,
-                        item.property_fingerprint,
-                        item.property_type.value,
-                        item.category.value,
-                        item.area_m2,
-                        item.facade_m,
-                        item.depth_m,
-                        item.current_price_vnd,
-                        item.current_price_per_m2,
-                        eval_res.price_status.value,
-                        item.listing_key,
-                    ),
-                )
+                update_price = True
+                new_price_vnd = item.current_price_vnd
+                new_price_m2 = item.current_price_per_m2
+                new_price_status = eval_res.price_status.value
+            elif eval_res.price_status == PriceStatus.CONTACT and old_price is not None:
+                price_changed = True
+                update_price = True
+                new_price_vnd = None
+                new_price_m2 = None
+                new_price_status = "contact"
+
+            # Unified single UPDATE statement for listings
+            update_listing_query = """
+                UPDATE listings SET
+                    last_seen_at = NOW(),
+                    ended_at = NULL,
+                    missing_count = 0,
+                    status = 'active',
+                    advertiser_id = COALESCE(%s, advertiser_id),
+                    published_at = COALESCE(%s, published_at),
+                    property_fingerprint = %s,
+                    property_type = %s,
+                    category = %s,
+                    area_m2 = COALESCE(%s, area_m2),
+                    facade_m = COALESCE(%s, facade_m),
+                    depth_m = COALESCE(%s, depth_m),
+                    current_price_vnd = CASE WHEN %s THEN %s ELSE current_price_vnd END,
+                    current_price_per_m2 = CASE WHEN %s THEN %s ELSE current_price_per_m2 END,
+                    price_status = CASE WHEN %s THEN %s ELSE price_status END,
+                    price_changed_at = CASE WHEN %s THEN NOW() ELSE price_changed_at END
+                WHERE listing_key = %s;
+            """
+            await cur.execute(
+                update_listing_query,
+                (
+                    advertiser_id,
+                    item.published_at,
+                    item.property_fingerprint,
+                    item.property_type.value,
+                    item.category.value,
+                    item.area_m2,
+                    item.facade_m,
+                    item.depth_m,
+                    update_price, new_price_vnd,
+                    update_price, new_price_m2,
+                    update_price, new_price_status,
+                    update_price,
+                    item.listing_key,
+                ),
+            )
+
+            if price_changed and item.current_price_vnd and item.current_price_vnd > 0:
                 # Record in listing_price_history (Gold)
                 insert_history_query = """
                     INSERT INTO listing_price_history (
@@ -186,75 +207,6 @@ class PgListingRepository(ListingRepository):
                         eval_res.price_diff_vnd,
                         eval_res.price_diff_percent,
                         eval_res.price_status.value,
-                    ),
-                )
-            elif eval_res.price_status == PriceStatus.CONTACT and old_price is not None:
-                # 2.2: Price changed from numeric price to agreement (NULL)
-                price_changed = True
-                update_contact_query = """
-                    UPDATE listings SET
-                        last_seen_at = NOW(),
-                        ended_at = NULL,
-                        missing_count = 0,
-                        status = 'active',
-                        advertiser_id = COALESCE(%s, advertiser_id),
-                        published_at = COALESCE(%s, published_at),
-                        property_fingerprint = %s,
-                        property_type = %s,
-                        category = %s,
-                        area_m2 = COALESCE(%s, area_m2),
-                        facade_m = COALESCE(%s, facade_m),
-                        depth_m = COALESCE(%s, depth_m),
-                        current_price_vnd = NULL,
-                        current_price_per_m2 = NULL,
-                        price_status = 'contact',
-                        price_changed_at = NOW()
-                    WHERE listing_key = %s;
-                """
-                await cur.execute(
-                    update_contact_query,
-                    (
-                        advertiser_id,
-                        item.published_at,
-                        item.property_fingerprint,
-                        item.property_type.value,
-                        item.category.value,
-                        item.area_m2,
-                        item.facade_m,
-                        item.depth_m,
-                        item.listing_key,
-                    ),
-                )
-            else:
-                # Price unchanged: update metadata & physical attributes
-                update_unchanged_query = """
-                    UPDATE listings SET
-                        last_seen_at = NOW(),
-                        ended_at = NULL,
-                        missing_count = 0,
-                        status = 'active',
-                        advertiser_id = COALESCE(%s, advertiser_id),
-                        published_at = COALESCE(%s, published_at),
-                        property_fingerprint = %s,
-                        property_type = %s,
-                        category = %s,
-                        area_m2 = COALESCE(%s, area_m2),
-                        facade_m = COALESCE(%s, facade_m),
-                        depth_m = COALESCE(%s, depth_m)
-                    WHERE listing_key = %s;
-                """
-                await cur.execute(
-                    update_unchanged_query,
-                    (
-                        advertiser_id,
-                        item.published_at,
-                        item.property_fingerprint,
-                        item.property_type.value,
-                        item.category.value,
-                        item.area_m2,
-                        item.facade_m,
-                        item.depth_m,
-                        item.listing_key,
                     ),
                 )
             # 2.1 & 3.1: Update listing_details only when distinct to eliminate MVCC bloat
@@ -352,7 +304,7 @@ class PgListingRepository(ListingRepository):
 
         # Index items and sort by listing_key to enforce global deterministic lock order
         indexed_batch = list(enumerate(batch))
-        indexed_batch.sort(key=lambda x: x[1][0].listing_key or f"{x[1][0].source}_{x[1][0].source_listing_id}")
+        indexed_batch.sort(key=lambda x: x[1][0].listing_key or f"{x[1][0].source}_{x[1][0].external_id}")
 
         results_by_index: List[Optional[Tuple[bool, bool]]] = [None] * len(batch)
         async with self.pool.connection() as conn:

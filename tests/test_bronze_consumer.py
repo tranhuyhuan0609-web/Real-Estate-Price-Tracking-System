@@ -50,7 +50,7 @@ async def test_bronze_consumer_bulk_upsert():
     # Check that $addToSet has crawl_run_id and $set has latest_raw_payload
     update_doc = ops[0]._doc["$set"]
     assert update_doc["site_id"] == "meeyland"
-    assert ops[0]._doc["$addToSet"]["crawl_run_ids"] == "run_001"
+    assert ops[0]._doc["$push"]["crawl_run_ids"]["$each"] == ["run_001"]
 
 
 @pytest.mark.asyncio

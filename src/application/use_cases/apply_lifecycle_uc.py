@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Dict, Optional
-from psycopg.rows import dict_row
+from typing import TYPE_CHECKING, Dict, Optional, Union
+from src.application.interfaces.lifecycle_repository import LifecycleRepository
 
 if TYPE_CHECKING:
     from psycopg_pool import AsyncConnectionPool
@@ -16,8 +16,20 @@ logger = logging.getLogger(__name__)
 class ApplyLifecycleUseCase:
     """Detects missing listings in full_sweep crawl runs and updates their lifecycle status."""
 
-    def __init__(self, pool: "AsyncConnectionPool") -> None:
-        self.pool = pool
+    def __init__(
+        self,
+        repo_or_pool: Union[LifecycleRepository, "AsyncConnectionPool", None] = None,
+        *,
+        pool: Optional["AsyncConnectionPool"] = None,
+    ) -> None:
+        target = repo_or_pool if repo_or_pool is not None else pool
+        if target is None:
+            raise ValueError("Either 'repo' or 'pool' must be provided to ApplyLifecycleUseCase.")
+        if isinstance(target, LifecycleRepository):
+            self.repo = target
+        else:
+            from src.infrastructure.database.pg_lifecycle_repo import PgLifecycleRepository
+            self.repo = PgLifecycleRepository(target)
 
     async def wait_for_ingestion(
         self,
@@ -42,16 +54,10 @@ class ApplyLifecycleUseCase:
         scraped = processed = 0
 
         while True:
-            async with self.pool.connection() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(
-                        "SELECT items_scraped, items_processed FROM crawl_runs WHERE crawl_run_id = %s;",
-                        (crawl_run_id,),
-                    )
-                    row = await cur.fetchone()
-            if not row:
+            progress = await self.repo.get_run_progress(crawl_run_id)
+            if not progress:
                 return False
-            scraped, processed = int(row[0] or 0), int(row[1] or 0)
+            scraped, processed = progress
 
             if scraped > 0 and processed >= scraped:
                 return True
@@ -71,97 +77,46 @@ class ApplyLifecycleUseCase:
         return ok
 
     async def execute(self, crawl_run_id: str) -> Dict[str, int]:
-        """Apply lifecycle rules to listings for a completed full_sweep crawl run.
+        """Apply lifecycle rules to listings for a completed full_sweep crawl run."""
+        run = await self.repo.get_run_details(crawl_run_id)
+        if not run:
+            raise ValueError(f"Crawl run '{crawl_run_id}' not found.")
 
-        Rules:
-            1. Find listings with source = site_id, status = 'active' and last_seen_at < run.started_at.
-            2. Increment missing_count = missing_count + 1.
-            3. If missing_count >= 3, transition status = 'expired' and set ended_at = NOW().
-            4. Record lifecycle_applied_at = NOW() on the crawl_runs record.
-        """
-        async with self.pool.connection() as conn:
-            async with conn.transaction():
-                async with conn.cursor(row_factory=dict_row) as cur:
-                    # 1. Check crawl run
-                    await cur.execute(
-                        "SELECT crawl_run_id, site_id, run_mode, status, started_at, lifecycle_applied_at, items_scraped FROM crawl_runs WHERE crawl_run_id = %s;",
-                        (crawl_run_id,),
-                    )
-                    run = await cur.fetchone()
+        if run["run_mode"] != "full_sweep":
+            logger.info("Run '%s' is %s (not full_sweep). Lifecycle check skipped.", crawl_run_id, run["run_mode"])
+            return {"incremented": 0, "expired": 0}
 
-                    if not run:
-                        raise ValueError(f"Crawl run '{crawl_run_id}' not found.")
+        if run["lifecycle_applied_at"] is not None:
+            logger.warning("Lifecycle rules already applied for run '%s'.", crawl_run_id)
+            return {"incremented": 0, "expired": 0}
 
-                    if run["run_mode"] != "full_sweep":
-                        logger.info("Run '%s' is %s (not full_sweep). Lifecycle check skipped.", crawl_run_id, run["run_mode"])
-                        return {"incremented": 0, "expired": 0}
+        # Safety gate: only a clean, completed sweep that actually scraped items may expire listings.
+        run_status = run.get("status", "completed")
+        if run_status != "completed":
+            logger.warning("Run '%s' has status '%s' (not completed). Lifecycle skipped.", crawl_run_id, run_status)
+            return {"incremented": 0, "expired": 0}
 
-                    if run["lifecycle_applied_at"] is not None:
-                        logger.warning("Lifecycle rules already applied for run '%s'.", crawl_run_id)
-                        return {"incremented": 0, "expired": 0}
+        items_scraped = run.get("items_scraped")
+        if items_scraped is not None and items_scraped <= 0:
+            logger.warning("Run '%s' scraped 0 items. Lifecycle skipped.", crawl_run_id)
+            return {"incremented": 0, "expired": 0}
 
-                    # Safety gate: only a clean, completed sweep that actually scraped items may expire
-                    # listings. A blocked / failed / empty sweep would otherwise mark everything missing.
-                    run_status = run.get("status", "completed")
-                    if run_status != "completed":
-                        logger.warning(
-                            "Run '%s' has status '%s' (not completed). Lifecycle skipped.", crawl_run_id, run_status
-                        )
-                        return {"incremented": 0, "expired": 0}
+        site_id = run["site_id"]
+        started_at = run["started_at"]
 
-                    items_scraped = run.get("items_scraped")
-                    if items_scraped is not None and items_scraped <= 0:
-                        logger.warning("Run '%s' scraped 0 items. Lifecycle skipped.", crawl_run_id)
-                        return {"incremented": 0, "expired": 0}
+        stats = await self.repo.apply_lifecycle_transaction(
+            site_id=site_id,
+            started_at=started_at,
+            crawl_run_id=crawl_run_id,
+            max_missing_count=3,
+        )
 
-                    site_id = run["site_id"]
-                    started_at = run["started_at"]
-
-                    # 2. Increment missing_count for listings not seen in this sweep
-                    increment_query = """
-                        UPDATE listings
-                        SET missing_count = missing_count + 1
-                        WHERE source = %s
-                          AND status = 'active'
-                          AND last_seen_at < %s;
-                    """
-                    await cur.execute(increment_query, (site_id, started_at))
-                    incremented_count = cur.rowcount
-
-                    # 3. Mark listings with missing_count >= 3 as expired
-                    expire_query = """
-                        UPDATE listings
-                        SET status = 'expired',
-                            ended_at = NOW()
-                        WHERE source = %s
-                          AND status = 'active'
-                          AND missing_count >= 3;
-                    """
-                    await cur.execute(expire_query, (site_id,))
-                    expired_count = cur.rowcount
-
-                    # 4. Mark lifecycle_applied_at
-                    await cur.execute(
-                        "UPDATE crawl_runs SET lifecycle_applied_at = NOW() WHERE crawl_run_id = %s;",
-                        (crawl_run_id,),
-                    )
-
-                    logger.info(
-                        "Lifecycle applied for '%s': missing_count incremented for %d listings, %d marked expired.",
-                        crawl_run_id, incremented_count, expired_count
-                    )
-                    return {"incremented": incremented_count, "expired": expired_count}
+        logger.info(
+            "Lifecycle applied for '%s': missing_count incremented for %d listings, %d marked expired.",
+            crawl_run_id, stats["incremented"], stats["expired"]
+        )
+        return stats
 
     async def refresh_gold_views(self) -> None:
         """Refresh analytical materialized views in PostgreSQL concurrently without locking."""
-        async with self.pool.connection() as conn:
-            await conn.set_autocommit(True)
-            async with conn.cursor() as cur:
-                try:
-                    await cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_ward_avg_price_per_m2;")
-                    await cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_steep_price_drops_7d;")
-                    logger.info("Successfully refreshed Gold Layer materialized views concurrently.")
-                except Exception as exc:
-                    logger.error("Failed to refresh materialized views concurrently: %s", exc)
-                    raise
-
+        await self.repo.refresh_gold_views()

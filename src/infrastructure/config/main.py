@@ -11,10 +11,7 @@ class Settings(DatabaseSettings, KafkaSettings, AppSettings):
     @model_validator(mode="after")
     def validate_configuration(self) -> "Settings":
         """Validate relationships between configuration values."""
-        if self.KAFKA_GROUP_BRONZE == self.KAFKA_GROUP_SILVER_GOLD:
-            raise ValueError(
-                "Bronze and Silver/Gold consumers must use different consumer groups."
-            )
+
 
         # The services actually deployed (docker-compose) use RAW_WRITER / CLEAN_PROCESSOR groups.
         # Sharing one group would split the topic between them so each layer misses events.

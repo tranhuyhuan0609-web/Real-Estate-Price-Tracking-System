@@ -25,11 +25,13 @@ class CrawlSiteUseCase:
         crawl_run_repo: CrawlRunRepository,
         event_publisher: EventPublisher,
         kafka_topic: str = "realestate.raw_events",
+        spider_factory: Optional[Callable[[CrawlerConfig], Spider]] = None,
     ) -> None:
         self.config_repo = config_repo
         self.crawl_run_repo = crawl_run_repo
         self.event_publisher = event_publisher
         self.kafka_topic = kafka_topic
+        self.spider_factory = spider_factory
 
     async def execute(
         self,
@@ -51,10 +53,9 @@ class CrawlSiteUseCase:
         mode_str = run_mode.value if isinstance(run_mode, RunMode) else str(run_mode)
 
         # 0. Abort any stale 'running' sessions older than 60 minutes to prevent blocked scheduler
-        if hasattr(self.crawl_run_repo, "abort_stale_runs"):
-            stale_count = await self.crawl_run_repo.abort_stale_runs(site_id=site_id, max_age_minutes=60)
-            if isinstance(stale_count, (int, float)) and stale_count > 0:
-                logger.warning("Aborted %d stale running crawl sessions for site '%s'", int(stale_count), site_id)
+        stale_count = await self.crawl_run_repo.abort_stale_runs(site_id=site_id, max_age_minutes=60)
+        if isinstance(stale_count, (int, float)) and stale_count > 0:
+            logger.warning("Aborted %d stale running crawl sessions for site '%s'", int(stale_count), site_id)
 
         # 1. Open session in crawl_runs
         await self.crawl_run_repo.create_run(
@@ -66,6 +67,8 @@ class CrawlSiteUseCase:
 
         if spider_override is not None:
             spider = spider_override
+        elif self.spider_factory is not None:
+            spider = self.spider_factory(config)
         else:
             from src.infrastructure.crawler.spider_factory import create_spider
             spider = create_spider(config)
@@ -79,11 +82,8 @@ class CrawlSiteUseCase:
                 return
             if len(b) == 1:
                 await self.event_publisher.publish(topic=self.kafka_topic, key=b[0][0], value=b[0][1])
-            elif hasattr(self.event_publisher, "publish_batch"):
-                await self.event_publisher.publish_batch(topic=self.kafka_topic, events=b)
             else:
-                for k, v in b:
-                    await self.event_publisher.publish(topic=self.kafka_topic, key=k, value=v)
+                await self.event_publisher.publish_batch(topic=self.kafka_topic, events=b)
             b.clear()
 
         try:
@@ -156,11 +156,10 @@ class CrawlSiteUseCase:
                     crawl_run_id=crawl_run_id,
                     status=CrawlRunStatus.COMPLETED.value,
                 )
-            if hasattr(self.config_repo, "update_last_run"):
-                try:
-                    await self.config_repo.update_last_run(site_id)
-                except Exception as update_err:
-                    logger.warning("Could not update last_run_at for site '%s': %s", site_id, update_err)
+            try:
+                await self.config_repo.update_last_run(site_id)
+            except Exception as update_err:
+                logger.warning("Could not update last_run_at for site '%s': %s", site_id, update_err)
 
             logger.info("Successfully completed crawl run '%s' with %d items.", crawl_run_id, items_count)
             return crawl_run_id

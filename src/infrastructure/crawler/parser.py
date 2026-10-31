@@ -162,13 +162,22 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
 
 
 def parse_vietnamese_area(raw: Any) -> Optional[float]:
-    """Parse property area in m2 from float or text like '85.5 m2'."""
+    """Parse property area in m2 from float or text like '85.5 m2'.
+
+    Requires explicit area units (m2, m², mét vuông) or a purely numeric string
+    to avoid falsely extracting non-area numbers (e.g. frontage, bedroom count).
+    """
     if raw is None:
         return None
     if isinstance(raw, (int, float)):
         return float(raw) if float(raw) > 0 else None
     text = str(raw).strip().lower().replace(",", ".")
-    m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(?:m[2²]|mét\s*vuông)?", text)
+    # 1. Pure numeric string
+    if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", text):
+        val = float(text)
+        return val if val > 0 else None
+    # 2. String containing explicit area unit (m2, m², m^2, mét vuông)
+    m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(?:m[2²]|m\^2|mét\s*vuông)\b", text)
     if m:
         try:
             val = float(m.group(1))
@@ -179,23 +188,35 @@ def parse_vietnamese_area(raw: Any) -> Optional[float]:
 
 
 def parse_vietnamese_phone(raw: Any) -> Optional[str]:
-    """Extract and normalize standard Vietnamese phone number (pure digits, starting with 0)."""
+    """Extract and normalize standard Vietnamese phone number (pure digits, starting with 0).
+
+    Strictly matches valid Vietnamese mobile (10 digits: 03, 05, 07, 08, 09)
+    or landline (10-11 digits starting with 02). Returns None if invalid.
+    """
     if not raw:
         return None
     text = str(raw).strip()
     text = re.sub(r"^(?:tel:|phone:|callto:)\s*", "", text, flags=re.IGNORECASE)
-    m = re.search(r"(?:/moi-gioi/|tel:|phone:|zalo\.me/)?(?:\+?84|0)?([35789]\d{8})", text)
+
+    # First normalize pure digits
+    clean = re.sub(r"\D", "", text)
+    if clean.startswith("84"):
+        clean = "0" + clean[2:]
+    elif not clean.startswith("0") and len(clean) == 9 and clean[0] in "35789":
+        clean = "0" + clean
+
+    # Valid mobile numbers (10 digits: 03x, 05x, 07x, 08x, 09x)
+    if len(clean) == 10 and re.match(r"^0[35789]\d{8}$", clean):
+        return clean
+    # Valid landline numbers (10 or 11 digits: 02x)
+    if len(clean) in (10, 11) and re.match(r"^02\d{8,9}$", clean):
+        return clean
+
+    # Fallback to search inside URLs like /moi-gioi/0901234567 or zalo.me/0901234567
+    m = re.search(r"(?:/moi-gioi/|tel:|phone:|zalo\.me/)(?:\+?84|0)?([35789]\d{8})\b", text)
     if m:
         return "0" + m.group(1)
-    clean = re.sub(r"\D", "", text)
-    if clean.startswith("84") and len(clean) in (11, 12):
-        clean = "0" + clean[2:]
-    elif not clean.startswith("0") and len(clean) == 9:
-        clean = "0" + clean
-    if len(clean) in (10, 11) and clean.startswith("0") and not clean.startswith("000"):
-        return clean
-    if len(clean) >= 9 and not clean.startswith("0000"):
-        return clean
+
     return None
 
 

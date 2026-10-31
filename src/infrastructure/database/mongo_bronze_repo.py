@@ -35,8 +35,11 @@ class MongoBronzeRepository:
                     "latest_raw_payload": event.raw_payload,
                     "last_scraped_at": event.scraped_at,
                 },
-                "$addToSet": {
-                    "crawl_run_ids": event.crawl_run_id,
+                "$push": {
+                    "crawl_run_ids": {
+                        "$each": [event.crawl_run_id],
+                        "$slice": -50,
+                    },
                 },
                 "$setOnInsert": {
                     "listing_key": event.listing_key,

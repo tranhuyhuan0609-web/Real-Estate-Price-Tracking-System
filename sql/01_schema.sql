@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- 1. Table: crawler_configs
 CREATE TABLE IF NOT EXISTS crawler_configs (
-    site_id TEXT PRIMARY KEY,
+    site_id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     enabled BOOLEAN NOT NULL DEFAULT true,
     crawler_type TEXT NOT NULL DEFAULT 'rest_api',
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS crawler_configs (
 -- 2. Table: crawl_runs
 CREATE TABLE IF NOT EXISTS crawl_runs (
     crawl_run_id TEXT PRIMARY KEY,
-    site_id VARCHAR(20) NOT NULL REFERENCES crawler_configs(site_id) ON DELETE CASCADE,
+    site_id VARCHAR(50) NOT NULL REFERENCES crawler_configs(site_id) ON DELETE CASCADE,
     run_mode VARCHAR(20) NOT NULL DEFAULT 'incremental',
     status VARCHAR(20) NOT NULL DEFAULT 'running',
     pages_crawled INT NOT NULL DEFAULT 0,
@@ -63,9 +63,8 @@ CREATE INDEX IF NOT EXISTS idx_advertisers_phone ON advertisers(phone) WHERE pho
 CREATE TABLE IF NOT EXISTS listings (
     listing_key TEXT PRIMARY KEY,
     property_fingerprint TEXT,
-    source VARCHAR(20) NOT NULL REFERENCES crawler_configs(site_id),
+    source VARCHAR(50) NOT NULL REFERENCES crawler_configs(site_id),
     external_id TEXT,
-    external_code BIGINT,
     advertiser_id VARCHAR(64) REFERENCES advertisers(advertiser_id) ON DELETE SET NULL,
     status TEXT NOT NULL DEFAULT 'active',
     missing_count INT NOT NULL DEFAULT 0,
@@ -109,6 +108,9 @@ ON listings(price_changed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_listings_source_last_seen
 ON listings(source, last_seen_at)
 WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_listings_advertiser ON listings(advertiser_id);
+CREATE INDEX IF NOT EXISTS idx_listings_fingerprint ON listings(property_fingerprint);
 
 -- 5. Table: listing_details
 CREATE TABLE IF NOT EXISTS listing_details (
