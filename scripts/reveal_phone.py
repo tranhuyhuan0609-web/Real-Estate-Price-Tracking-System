@@ -36,7 +36,7 @@ async def main():
     settings = load_settings()
     revealer = PhoneRevealer(timeout_sec=args.timeout)
 
-    async with psycopg_pool.AsyncConnectionPool(conninfo=settings.postgres_dsn) as pool:
+    async with psycopg_pool.AsyncConnectionPool(conninfo=settings.postgres_dsn, min_size=1, max_size=5) as pool:
         use_case = RevealPhoneUseCase(pool, revealer=revealer)
         logger.info("Executing on-demand phone reveal for '%s'...", args.listing_key)
         result = await use_case.execute(args.listing_key)

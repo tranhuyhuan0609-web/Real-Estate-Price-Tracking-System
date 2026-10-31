@@ -32,7 +32,7 @@ async def main():
     args = parser.parse_args()
 
     settings = load_settings()
-    async with psycopg_pool.AsyncConnectionPool(conninfo=settings.postgres_dsn) as pool:
+    async with psycopg_pool.AsyncConnectionPool(conninfo=settings.postgres_dsn, min_size=1, max_size=5) as pool:
         use_case = ApplyLifecycleUseCase(pool)
 
         if args.run_id:

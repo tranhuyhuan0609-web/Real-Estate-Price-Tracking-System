@@ -82,3 +82,117 @@ def test_init_mongo_indexes(monkeypatch):
     assert mock_collection.create_index.call_count == 3
     # Check that client.close() was called to prevent connection leaks
     assert mock_client_instance.close.called
+
+
+@pytest.mark.asyncio
+async def test_raw_event_consumer_service_with_dlq(monkeypatch):
+    """Test RawEventConsumerService parses valid, forwards invalid to DLQ and commits."""
+    from src.infrastructure.messaging.raw_event_consumer import RawEventConsumerService
+    from aiokafka import TopicPartition
+
+    service = RawEventConsumerService(batch_size=10, run_once=True)
+
+    valid_payload = {
+        "listing_key": "meeyland_123",
+        "site_id": "meeyland",
+        "crawl_run_id": "run_01",
+        "scraped_at": datetime.now(timezone.utc).isoformat(),
+        "parsed_data": {
+            "listing_key": "meeyland_123",
+            "source": "meeyland",
+            "category": "sale",
+            "property_type": "house",
+            "details": {"url": "https://meeyland.com/test", "title": "Test House"},
+        },
+        "raw_payload": {"id": 123},
+    }
+
+    mock_msg_valid = MagicMock(topic="raw.topic", partition=0, offset=10, key=b"meeyland_123", value=valid_payload)
+    mock_msg_invalid = MagicMock(topic="raw.topic", partition=0, offset=11, key=b"bad_key", value={"invalid": "no listing_key"})
+
+    tp = TopicPartition("raw.topic", 0)
+    mock_consumer = AsyncMock()
+    mock_consumer.start = AsyncMock()
+    mock_consumer.stop = AsyncMock()
+    mock_consumer.commit = AsyncMock()
+    mock_consumer.seek = MagicMock()
+    mock_consumer.getmany = AsyncMock(side_effect=[
+        {tp: [mock_msg_valid, mock_msg_invalid]},
+        {},
+        {},
+        {},
+    ])
+
+    mock_dlq = AsyncMock()
+    mock_dlq.start = AsyncMock()
+    mock_dlq.stop = AsyncMock()
+    mock_dlq.publish = AsyncMock()
+
+    mock_repo = AsyncMock()
+    mock_repo.close = AsyncMock()
+
+    mock_uc = AsyncMock()
+    mock_uc.process_batch = AsyncMock(return_value=1)
+
+    monkeypatch.setattr("src.infrastructure.messaging.raw_event_consumer.AIOKafkaConsumer", MagicMock(return_value=mock_consumer))
+    monkeypatch.setattr("src.infrastructure.messaging.raw_event_consumer.AioKafkaEventPublisher", MagicMock(return_value=mock_dlq))
+    monkeypatch.setattr("src.infrastructure.messaging.raw_event_consumer.MongoBronzeRepository", MagicMock(return_value=mock_repo))
+    monkeypatch.setattr("src.infrastructure.messaging.raw_event_consumer.StoreBronzeUseCase", MagicMock(return_value=mock_uc))
+    monkeypatch.setattr("src.infrastructure.messaging.raw_event_consumer.init_mongo_indexes", MagicMock())
+
+    await service.run()
+
+    assert mock_uc.process_batch.called
+    assert mock_dlq.publish.called
+    assert mock_consumer.commit.called
+    assert not mock_consumer.seek.called
+
+
+@pytest.mark.asyncio
+async def test_raw_event_consumer_service_dlq_failure_rewinds(monkeypatch):
+    """Test RawEventConsumerService rewinds offset when DLQ publish fails."""
+    from src.infrastructure.messaging.raw_event_consumer import RawEventConsumerService
+    from aiokafka import TopicPartition
+
+    service = RawEventConsumerService(batch_size=10, run_once=True)
+
+    mock_msg_invalid = MagicMock(topic="raw.topic", partition=0, offset=42, key=b"bad_key", value={"corrupt": True})
+
+    tp = TopicPartition("raw.topic", 0)
+    mock_consumer = AsyncMock()
+    mock_consumer.start = AsyncMock()
+    mock_consumer.stop = AsyncMock()
+    mock_consumer.commit = AsyncMock()
+    mock_consumer.seek = MagicMock()
+    mock_consumer.getmany = AsyncMock(side_effect=[
+        {tp: [mock_msg_invalid]},
+        {},
+        {},
+        {},
+    ])
+
+    mock_dlq = AsyncMock()
+    mock_dlq.start = AsyncMock()
+    mock_dlq.stop = AsyncMock()
+    mock_dlq.publish = AsyncMock(side_effect=RuntimeError("DLQ broker down"))
+
+    mock_repo = AsyncMock()
+    mock_repo.close = AsyncMock()
+
+    mock_uc = AsyncMock()
+
+    monkeypatch.setattr("src.infrastructure.messaging.raw_event_consumer.AIOKafkaConsumer", MagicMock(return_value=mock_consumer))
+    monkeypatch.setattr("src.infrastructure.messaging.raw_event_consumer.AioKafkaEventPublisher", MagicMock(return_value=mock_dlq))
+    monkeypatch.setattr("src.infrastructure.messaging.raw_event_consumer.MongoBronzeRepository", MagicMock(return_value=mock_repo))
+    monkeypatch.setattr("src.infrastructure.messaging.raw_event_consumer.StoreBronzeUseCase", MagicMock(return_value=mock_uc))
+    monkeypatch.setattr("src.infrastructure.messaging.raw_event_consumer.init_mongo_indexes", MagicMock())
+
+    await service.run()
+
+    assert mock_dlq.publish.called
+    assert mock_consumer.seek.called
+    # Verifies seek called with partition and offset 42
+    seek_args = mock_consumer.seek.call_args[0]
+    assert seek_args[0] == tp
+    assert seek_args[1] == 42
+    assert not mock_consumer.commit.called

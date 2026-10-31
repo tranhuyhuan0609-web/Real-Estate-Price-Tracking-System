@@ -176,7 +176,7 @@ class CrawlerSchedulerService:
         event_publisher = AioKafkaEventPublisher(self.settings.KAFKA_BOOTSTRAP_SERVERS)
         await event_publisher.start()
 
-        async with psycopg_pool.AsyncConnectionPool(conninfo=self.settings.postgres_dsn) as pool:
+        async with psycopg_pool.AsyncConnectionPool(conninfo=self.settings.postgres_dsn, min_size=1, max_size=5) as pool:
             # Clean up stale running crawl runs left over from prior process termination
             try:
                 async with pool.connection() as conn:

@@ -10,8 +10,8 @@ import signal
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
-from aiokafka import AIOKafkaConsumer
+from typing import Dict, Tuple, Any, List, Optional
+from aiokafka import AIOKafkaConsumer, TopicPartition
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 if str(BASE_DIR) not in sys.path:
@@ -52,6 +52,34 @@ class RawEventConsumerService:
         self.run_once = run_once
         self.shutdown_event = asyncio.Event()
 
+    def stop(self) -> None:
+        """Signal the consumer loop to exit."""
+        logger.info("Shutdown signal received for Raw Event Consumer.")
+        self.shutdown_event.set()
+
+    async def _forward_to_dlq(self, dlq_publisher: AioKafkaEventPublisher, msg: Any, exc: Exception) -> bool:
+        dlq_record = {
+            "failed_at": datetime.now(timezone.utc).isoformat(),
+            "consumer_group": self.settings.KAFKA_GROUP_RAW_WRITER,
+            "topic": msg.topic,
+            "partition": msg.partition,
+            "offset": msg.offset,
+            "raw_key": msg.key.decode("utf-8", errors="replace") if isinstance(msg.key, (bytes, bytearray)) else str(msg.key or ""),
+            "raw_payload": msg.value,
+            "error_type": exc.__class__.__name__,
+            "error_message": str(exc),
+        }
+        try:
+            await dlq_publisher.publish(
+                topic=self.settings.KAFKA_DLQ_TOPIC,
+                key=dlq_record["raw_key"] or "unknown_key",
+                value=dlq_record,
+            )
+            return True
+        except Exception as pub_err:
+            logger.error("Failed to forward error to DLQ: %s", pub_err)
+            return False
+
     async def run(self) -> None:
         logger.info("Starting Raw Event Consumer (Bronze Layer)...")
         logger.info(
@@ -89,22 +117,8 @@ class RawEventConsumerService:
         await consumer.start()
         logger.info("Raw Event Consumer connected to Kafka and ready.")
 
-        batch: List[RawEventMessage] = []
-        last_flush = asyncio.get_running_loop().time()
         empty_polls = 0
         total_ingested = 0
-
-        async def flush():
-            nonlocal last_flush, total_ingested
-            if not batch:
-                return
-            count = len(batch)
-            logger.info("Flushing batch of %d items to MongoDB Bronze layer...", count)
-            await use_case.process_batch(batch)
-            await consumer.commit()
-            total_ingested += count
-            batch.clear()
-            last_flush = asyncio.get_running_loop().time()
 
         try:
             while not self.shutdown_event.is_set():
@@ -112,55 +126,54 @@ class RawEventConsumerService:
                     records = await consumer.getmany(timeout_ms=1000, max_records=self.batch_size)
                     if not records:
                         empty_polls += 1
-                        if self.run_once and empty_polls >= 3 and not batch:
+                        if self.run_once and empty_polls >= 3:
                             logger.info("Topic caught up and idle (total: %d). Exiting --once mode.", total_ingested)
                             break
+                        continue
                     else:
                         empty_polls = 0
+
+                    batch_events: List[RawEventMessage] = []
+                    dlq_forwarded = 0
+                    dlq_failed: List[Any] = []
 
                     for tp, messages in records.items():
                         for msg in messages:
                             try:
                                 event = RawEventMessage.model_validate(msg.value)
-                                batch.append(event)
+                                batch_events.append(event)
                             except Exception as exc:
                                 logger.error("Invalid RawEventMessage at offset %d: %s. Forwarding to DLQ...", msg.offset, exc)
-                                dlq_record = {
-                                    "failed_at": datetime.now(timezone.utc).isoformat(),
-                                    "consumer_group": self.settings.KAFKA_GROUP_RAW_WRITER,
-                                    "topic": msg.topic,
-                                    "partition": msg.partition,
-                                    "offset": msg.offset,
-                                    "raw_key": msg.key.decode("utf-8", errors="replace") if isinstance(msg.key, (bytes, bytearray)) else str(msg.key or ""),
-                                    "raw_payload": msg.value,
-                                    "error_type": exc.__class__.__name__,
-                                    "error_message": str(exc),
-                                }
-                                try:
-                                    await dlq_publisher.publish(
-                                        topic=self.settings.KAFKA_DLQ_TOPIC,
-                                        key=dlq_record["raw_key"] or "unknown_key",
-                                        value=dlq_record,
-                                    )
-                                except Exception as pub_err:
-                                    logger.error("Failed to forward error to DLQ: %s", pub_err)
+                                if await self._forward_to_dlq(dlq_publisher, msg, exc) is False:
+                                    dlq_failed.append(msg)
+                                else:
+                                    dlq_forwarded += 1
 
-                    now = asyncio.get_running_loop().time()
-                    if len(batch) >= self.batch_size or (batch and now - last_flush >= self.flush_interval_sec):
-                        await flush()
+                    if batch_events:
+                        await use_case.process_batch(batch_events)
+                        total_ingested += len(batch_events)
+
+                    if dlq_failed:
+                        # Never commit past a message that failed both Bronze storage and DLQ
+                        earliest: Dict[Tuple[str, int], int] = {}
+                        for m in dlq_failed:
+                            k = (m.topic, m.partition)
+                            earliest[k] = min(m.offset, earliest.get(k, m.offset))
+                        for (topic, partition), offset in earliest.items():
+                            consumer.seek(TopicPartition(topic, partition), offset)
+                        logger.error("%d message(s) could not be stored in Bronze nor sent to DLQ; rewound for retry.", len(dlq_failed))
+                        await asyncio.sleep(1.0)
+                    elif len(batch_events) + dlq_forwarded > 0:
+                        await consumer.commit()
+                        logger.info("Committed batch (%d bronze events, %d to DLQ) (total: %d).", len(batch_events), dlq_forwarded, total_ingested)
 
                 except asyncio.CancelledError:
                     break
                 except Exception as exc:
                     logger.error("Error in consumer poll loop: %s", exc, exc_info=True)
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(1.0)
 
         finally:
-            if batch:
-                try:
-                    await flush()
-                except Exception as exc:
-                    logger.error("Error flushing remaining items on shutdown: %s", exc)
             await consumer.stop()
             await dlq_publisher.stop()
             await repo.close()

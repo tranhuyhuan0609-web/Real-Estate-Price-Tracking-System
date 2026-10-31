@@ -91,7 +91,7 @@ class CleanEventProcessorService:
         await dlq_publisher.start()
 
         # 2. Setup PostgreSQL connection pool & Use Case
-        async with psycopg_pool.AsyncConnectionPool(conninfo=self.settings.postgres_dsn) as pool:
+        async with psycopg_pool.AsyncConnectionPool(conninfo=self.settings.postgres_dsn, min_size=1, max_size=5) as pool:
             repo = PgListingRepository(pool)
             use_case = ProcessSilverGoldUseCase(pg_repo=repo)
 

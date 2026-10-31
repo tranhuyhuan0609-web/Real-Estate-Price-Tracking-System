@@ -97,7 +97,7 @@ async def main():
 
     settings = load_settings()
 
-    async with psycopg_pool.AsyncConnectionPool(conninfo=settings.postgres_dsn) as pool:
+    async with psycopg_pool.AsyncConnectionPool(conninfo=settings.postgres_dsn, min_size=1, max_size=5) as pool:
         config_repo = PostgresConfigRepository(pool)
         config = await config_repo.get_config(args.site)
 

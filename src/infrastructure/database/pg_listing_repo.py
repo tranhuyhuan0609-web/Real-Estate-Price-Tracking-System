@@ -139,6 +139,7 @@ class PgListingRepository(ListingRepository):
                         missing_count = 0,
                         status = 'active',
                         advertiser_id = COALESCE(%s, advertiser_id),
+                        published_at = COALESCE(%s, published_at),
                         property_fingerprint = %s,
                         property_type = %s,
                         category = %s,
@@ -155,6 +156,7 @@ class PgListingRepository(ListingRepository):
                     update_listing_query,
                     (
                         advertiser_id,
+                        item.published_at,
                         item.property_fingerprint,
                         item.property_type.value,
                         item.category.value,
@@ -196,6 +198,7 @@ class PgListingRepository(ListingRepository):
                         missing_count = 0,
                         status = 'active',
                         advertiser_id = COALESCE(%s, advertiser_id),
+                        published_at = COALESCE(%s, published_at),
                         property_fingerprint = %s,
                         property_type = %s,
                         category = %s,
@@ -212,6 +215,7 @@ class PgListingRepository(ListingRepository):
                     update_contact_query,
                     (
                         advertiser_id,
+                        item.published_at,
                         item.property_fingerprint,
                         item.property_type.value,
                         item.category.value,
@@ -230,6 +234,7 @@ class PgListingRepository(ListingRepository):
                         missing_count = 0,
                         status = 'active',
                         advertiser_id = COALESCE(%s, advertiser_id),
+                        published_at = COALESCE(%s, published_at),
                         property_fingerprint = %s,
                         property_type = %s,
                         category = %s,
@@ -242,6 +247,7 @@ class PgListingRepository(ListingRepository):
                     update_unchanged_query,
                     (
                         advertiser_id,
+                        item.published_at,
                         item.property_fingerprint,
                         item.property_type.value,
                         item.category.value,
@@ -259,24 +265,24 @@ class PgListingRepository(ListingRepository):
                 UPDATE listing_details SET
                     url = %s,
                     title = %s,
-                    description = %s,
-                    city_name = %s,
-                    district_name = %s,
-                    ward_name = %s,
-                    lng = %s,
-                    lat = %s,
-                    geom = ST_GeomFromEWKT(%s),
-                    legal_status = %s,
-                    thumbnail_url = %s,
-                    media_list = %s,
+                    description = COALESCE(%s, description),
+                    city_name = COALESCE(%s, city_name),
+                    district_name = COALESCE(%s, district_name),
+                    ward_name = COALESCE(%s, ward_name),
+                    lng = COALESCE(%s, lng),
+                    lat = COALESCE(%s, lat),
+                    geom = COALESCE(ST_GeomFromEWKT(%s), geom),
+                    legal_status = COALESCE(%s, legal_status),
+                    thumbnail_url = COALESCE(%s, thumbnail_url),
+                    media_list = COALESCE(%s, media_list),
                     updated_at = NOW()
                 WHERE listing_key = %s
                   AND (
                       title, description, city_name, district_name, ward_name,
                       lng, lat, legal_status, thumbnail_url, url
                   ) IS DISTINCT FROM (
-                      %s, %s, %s, %s, %s,
-                      %s, %s, %s, %s, %s
+                      %s, COALESCE(%s, description), COALESCE(%s, city_name), COALESCE(%s, district_name), COALESCE(%s, ward_name),
+                      COALESCE(%s, lng), COALESCE(%s, lat), COALESCE(%s, legal_status), COALESCE(%s, thumbnail_url), %s
                   );
             """
             await cur.execute(
@@ -334,21 +340,29 @@ class PgListingRepository(ListingRepository):
     ) -> List[Tuple[bool, bool]]:
         """Execute atomic Silver & Gold batch ingestion within a single transaction.
 
+        Sorts items by listing_key before taking row locks to guarantee deterministic lock
+        ordering across concurrent worker transactions, completely eliminating deadlock risks.
+
         Returns:
-            List[Tuple[bool, bool]]: list of (is_new, price_changed) for each item in the batch.
+            List[Tuple[bool, bool]]: list of (is_new, price_changed) for each item in the batch,
+            preserving the caller's original batch order.
         """
         if not batch:
             return []
 
-        results: List[Tuple[bool, bool]] = []
+        # Index items and sort by listing_key to enforce global deterministic lock order
+        indexed_batch = list(enumerate(batch))
+        indexed_batch.sort(key=lambda x: x[1][0].listing_key or f"{x[1][0].source}_{x[1][0].source_listing_id}")
+
+        results_by_index: List[Optional[Tuple[bool, bool]]] = [None] * len(batch)
         async with self.pool.connection() as conn:
             async with conn.transaction():
                 async with conn.cursor(row_factory=dict_row) as cur:
-                    for item, crawl_run_id in batch:
+                    for orig_idx, (item, crawl_run_id) in indexed_batch:
                         res = await self._ingest_item_with_cursor(cur, item, crawl_run_id)
-                        results.append(res)
+                        results_by_index[orig_idx] = res
 
-        return results
+        return [r for r in results_by_index if r is not None]
 
     async def batch_update_crawl_run_metrics(
         self,

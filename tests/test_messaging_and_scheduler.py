@@ -130,9 +130,21 @@ async def test_clean_event_processor_run_once(monkeypatch):
     monkeypatch.setattr("src.infrastructure.messaging.clean_event_consumer.ProcessSilverGoldUseCase", MagicMock(return_value=mock_use_case))
 
     # Mock AsyncConnectionPool context manager
+    mock_cur = MagicMock()
+    mock_cur.rowcount = 0
+    mock_cur.execute = AsyncMock()
+    mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+    mock_cur.__aexit__ = AsyncMock(return_value=None)
+
+    mock_conn = MagicMock()
+    mock_conn.cursor = MagicMock(return_value=mock_cur)
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=None)
+
     mock_pool = MagicMock()
     mock_pool.__aenter__ = AsyncMock(return_value=mock_pool)
-    mock_pool.__aexit__ = AsyncMock()
+    mock_pool.__aexit__ = AsyncMock(return_value=None)
+    mock_pool.connection = MagicMock(return_value=mock_conn)
     monkeypatch.setattr("psycopg_pool.AsyncConnectionPool", MagicMock(return_value=mock_pool))
 
     await service.run()
@@ -226,9 +238,21 @@ async def test_crawler_scheduler_run_once_execution(monkeypatch):
     mock_use_case.execute = AsyncMock(return_value="meeyland_run_123")
     monkeypatch.setattr("src.infrastructure.crawler.crawler_scheduler_entrypoint.CrawlSiteUseCase", MagicMock(return_value=mock_use_case))
 
+    mock_cur = MagicMock()
+    mock_cur.rowcount = 0
+    mock_cur.execute = AsyncMock()
+    mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+    mock_cur.__aexit__ = AsyncMock(return_value=None)
+
+    mock_conn = MagicMock()
+    mock_conn.cursor = MagicMock(return_value=mock_cur)
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=None)
+
     mock_pool = MagicMock()
     mock_pool.__aenter__ = AsyncMock(return_value=mock_pool)
-    mock_pool.__aexit__ = AsyncMock()
+    mock_pool.__aexit__ = AsyncMock(return_value=None)
+    mock_pool.connection = MagicMock(return_value=mock_conn)
     monkeypatch.setattr("psycopg_pool.AsyncConnectionPool", MagicMock(return_value=mock_pool))
 
     await scheduler.run()

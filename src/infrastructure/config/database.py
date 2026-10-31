@@ -7,14 +7,14 @@ class DatabaseSettings(BaseSubSettings):
     """Database configuration for PostgreSQL and MongoDB."""
 
     # MongoDB
-    MONGO_HOST: str = "localhost"
+    MONGO_HOST: str = "127.0.0.1"
     MONGO_PORT: int = Field(default=27017, ge=1, le=65535)
     MONGO_USER: str
     MONGO_PASSWORD: SecretStr
     MONGO_DB: str
 
     # PostgreSQL
-    POSTGRES_HOST: str = "localhost"
+    POSTGRES_HOST: str = "127.0.0.1"
     POSTGRES_PORT: int = Field(default=5432, ge=1, le=65535)
     POSTGRES_USER: str
     POSTGRES_PASSWORD: SecretStr
