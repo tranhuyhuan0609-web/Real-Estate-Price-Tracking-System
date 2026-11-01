@@ -570,7 +570,7 @@ INSERT INTO crawler_configs (
     'Muaban.net - Mua bán BĐS',
     true,
     'html',
-    '{"05:00", "11:00", "17:00", "23:00"}',
+    '{"02:00", "08:00", "14:00", "20:00"}',
     NULL,
     '{
       "request": {
@@ -649,7 +649,7 @@ INSERT INTO crawler_configs (
     'Nhà Tốt - Hà Nội',
     true,
     'rest_api',
-    '{"05:00", "11:00", "17:00", "23:00"}',
+    '{"02:00", "08:00", "14:00", "20:00"}',
     NULL,
     '{
       "request": {
@@ -762,7 +762,7 @@ INSERT INTO crawler_configs (
     'Mogi - Mua Căn hộ Chung cư',
     true,
     'html',
-    '{"05:00", "11:00", "17:00", "23:00"}',
+    '{"02:00", "08:00", "14:00", "20:00"}',
     NULL,
     '{
       "request": {
@@ -841,7 +841,7 @@ INSERT INTO crawler_configs (
     'Homedy - Bán Căn hộ Chung cư',
     true,
     'html',
-    '{"05:00", "11:00", "17:00", "23:00"}',
+    '{"02:00", "08:00", "14:00", "20:00"}',
     NULL,
     '{
       "request": {
@@ -919,7 +919,7 @@ INSERT INTO crawler_configs (
     'Cafeland - Dự án BĐS',
     true,
     'html',
-    '{"05:00", "11:00", "17:00", "23:00"}',
+    '{"02:00", "08:00", "14:00", "20:00"}',
     NULL,
     '{
       "request": {
