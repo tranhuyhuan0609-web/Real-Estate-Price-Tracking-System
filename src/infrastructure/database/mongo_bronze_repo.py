@@ -14,8 +14,16 @@ logger = logging.getLogger(__name__)
 class MongoBronzeRepository(BronzeRepository):
     """Bronze repository that persists raw scraped items asynchronously into MongoDB."""
 
-    def __init__(self, uri: str, db_name: str, collection_name: str = "raw_listings") -> None:
-        self.client: AsyncMongoClient = AsyncMongoClient(uri)
+    def __init__(
+        self,
+        uri: Optional[str] = None,
+        db_name: str = "Raw_data",
+        collection_name: str = "raw_listings",
+        *,
+        mongo_uri: Optional[str] = None,
+    ) -> None:
+        effective_uri = uri or mongo_uri or "mongodb://127.0.0.1:27017"
+        self.client: AsyncMongoClient = AsyncMongoClient(effective_uri)
         self.db = self.client[db_name]
         self.collection = self.db[collection_name]
 
