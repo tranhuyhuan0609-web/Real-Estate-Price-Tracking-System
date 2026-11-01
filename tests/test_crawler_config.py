@@ -31,7 +31,7 @@ def test_seed_config_is_valid(config_data):
 def test_page_budget_per_run_mode(config_data):
     config = CrawlerConfig.model_validate(config_data)
     assert config.max_pages("incremental") == 10
-    assert config.max_pages("full_sweep") == 500
+    assert config.max_pages("full_sweep") == 1000
     with pytest.raises(ValueError):
         config.max_pages("weekly")
 
