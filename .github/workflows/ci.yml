@@ -65,3 +65,4 @@ jobs:
           KAFKA_BOOTSTRAP_SERVERS: 127.0.0.1:9092
         run: |
           pytest --maxfail=5 --disable-warnings
+

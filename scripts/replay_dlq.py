@@ -186,7 +186,7 @@ async def main() -> None:
     try:
         if args.source == "mongo":
             count = await replay_from_mongo(
-                mongo_uri=settings.MONGO_URI,
+                mongo_uri=settings.mongo_uri,
                 db_name=settings.MONGO_DB,
                 target_topic=target_topic,
                 publisher=publisher,

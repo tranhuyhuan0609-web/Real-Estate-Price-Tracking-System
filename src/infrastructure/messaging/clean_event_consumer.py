@@ -64,8 +64,9 @@ class CleanEventProcessorService:
         """
         if isinstance(exc, (ValueError, TypeError)):
             return True
-        # Psycopg DataError, IntegrityError, ProgrammingError (syntax/schema)
-        if isinstance(exc, (psycopg.DataError, psycopg.IntegrityError, psycopg.ProgrammingError)):
+        # Psycopg DataError, IntegrityError (bad data / check / not null / type mismatch)
+        # Note: ProgrammingError (e.g. undefined column, syntax error) is a code/schema bug, NOT a poison pill.
+        if isinstance(exc, (psycopg.DataError, psycopg.IntegrityError)):
             return True
         # Check by class name in case psycopg exception is wrapped
         err_type = type(exc).__name__

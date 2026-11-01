@@ -59,6 +59,41 @@ def clean_html(raw_html: Optional[str]) -> Optional[str]:
     return cleaned if cleaned else None
 
 
+MAX_VALID_PRICE_VND = 5_000_000_000_000  # 5,000 tỷ VNĐ sanity threshold
+
+
+def _normalize_vietnamese_number_str(s: str) -> str:
+    """Normalize a Vietnamese numeric string with possible thousand/decimal separators.
+
+    Examples:
+        '1.200' -> '1200'
+        '1,596' -> '1596'
+        '1.200,5' -> '1200.5'
+        '1,200.5' -> '1200.5'
+        '85.5' -> '85.5'
+        '85,5' -> '85.5'
+    """
+    s = s.strip()
+    if "." in s and "," in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "." in s:
+        if re.search(r"^\d{1,3}(?:\.\d{3})+$", s):
+            s = s.replace(".", "")
+        elif re.search(r"\b\d{1,3}\.\d{3}(?!\d)", s):
+            s = re.sub(r"(?<=\d)\.(\d{3})(?!\d)", r"\1", s)
+    elif "," in s:
+        if re.search(r"^\d{1,3}(?:,\d{3})+$", s):
+            s = s.replace(",", "")
+        elif re.search(r"\b\d{1,3},(\d{3})(?!\d)", s):
+            s = re.sub(r"(?<=\d),(\d{3})(?!\d)", r"\1", s)
+        else:
+            s = s.replace(",", ".")
+    return s
+
+
 def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Optional[float], Optional[float]]:
     """Parse real estate price from raw float, int or Vietnamese text (e.g. '5.2 tỷ', '850 triệu', '45 tr/m2').
 
@@ -69,7 +104,7 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
         return None, None
     if isinstance(raw, (int, float)):
         val = float(raw)
-        if val <= 0:
+        if val <= 0 or val > MAX_VALID_PRICE_VND:
             return None, None
         pm2 = round(val / area, 0) if area and area > 0 else None
         return val, pm2
@@ -80,8 +115,8 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
     if re.match(r"^0+(?:[\.,]0+)?\s*(?:đ|d|đồng|dong|vnd|tỷ|triệu|tr)?$", text):
         return None, None
 
-    # 1. Price per m2: e.g. "45 triệu/m2" or "45 tr/m2" or "1.5 tỷ/m2"
-    m_per_m2 = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(tỷ|ty|tỉ|ti|triệu|trieu|tr|nghìn|ngan|k)\s*/\s*m[2²]", text)
+    # 1. Price per m2: e.g. "45 triệu/m2" or "45 tr/m2" or "1.5 tỷ/m2" or "48tr/m"
+    m_per_m2 = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(tỷ|ty|tỉ|ti|triệu|trieu|tr|nghìn|ngan|k)\s*/\s*(?:m[2²]|m\b)", text)
     if m_per_m2:
         num = float(m_per_m2.group(1).replace(",", "."))
         unit = m_per_m2.group(2)
@@ -93,6 +128,8 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
             mult = 1_000
         price_m2 = num * mult
         price_vnd = round(price_m2 * area) if area and area > 0 else None
+        if price_vnd and price_vnd > MAX_VALID_PRICE_VND:
+            return None, None
         return price_vnd, price_m2
 
     # Clean rental suffixes e.g. '/tháng', '/th', '/năm'
@@ -115,6 +152,8 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
             else:
                 tr = tr_raw * 1_000_000
         total = ty * 1_000_000_000 + tr
+        if total > MAX_VALID_PRICE_VND:
+            return None, None
         pm2 = round(total / area, 0) if area and area > 0 else None
         return total, pm2
 
@@ -134,6 +173,8 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
             else:
                 k = k_raw * 1_000
         total = tr * 1_000_000 + k
+        if total > MAX_VALID_PRICE_VND:
+            return None, None
         pm2 = round(total / area, 0) if area and area > 0 else None
         return total, pm2
 
@@ -148,6 +189,8 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
             total = num * 1_000_000
         else:
             total = num * 1_000
+        if total > MAX_VALID_PRICE_VND:
+            return None, None
         pm2 = round(total / area, 0) if area and area > 0 else None
         return total, pm2
 
@@ -155,6 +198,8 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
     clean_digits = re.sub(r"[^\d]", "", text)
     if clean_digits and len(clean_digits) >= 6:
         val = float(clean_digits)
+        if val > MAX_VALID_PRICE_VND:
+            return None, None
         pm2 = round(val / area, 0) if area and area > 0 else None
         return val, pm2
 
@@ -162,7 +207,7 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
 
 
 def parse_vietnamese_area(raw: Any) -> Optional[float]:
-    """Parse property area in m2 from float or text like '85.5 m2'.
+    """Parse property area in m2 from float or text like '85.5 m2', '1.200 m2'.
 
     Requires explicit area units (m2, m², mét vuông) or a purely numeric string
     to avoid falsely extracting non-area numbers (e.g. frontage, bedroom count).
@@ -170,18 +215,30 @@ def parse_vietnamese_area(raw: Any) -> Optional[float]:
     if raw is None:
         return None
     if isinstance(raw, (int, float)):
-        return float(raw) if float(raw) > 0 else None
-    text = str(raw).strip().lower().replace(",", ".")
+        val = float(raw)
+        return val if 0 < val <= 5_000_000 else None
+    text = str(raw).strip().lower()
+    norm_text = _normalize_vietnamese_number_str(text)
+
     # 1. Pure numeric string
-    if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", text):
-        val = float(text)
-        return val if val > 0 else None
+    if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", norm_text):
+        val = float(norm_text)
+        return val if 0 < val <= 5_000_000 else None
     # 2. String containing explicit area unit (m2, m², m^2, mét vuông)
-    m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(?:m[2²]|m\^2|mét\s*vuông)\b", text)
+    m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(?:m[2²]|m\^2|mét\s*vuông)\b", norm_text)
     if m:
         try:
             val = float(m.group(1))
-            return val if val > 0 else None
+            return val if 0 < val <= 5_000_000 else None
+        except ValueError:
+            pass
+    # Fallback search in raw text
+    m2 = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:m[2²]|m\^2|mét\s*vuông)\b", text)
+    if m2:
+        try:
+            val_str = _normalize_vietnamese_number_str(m2.group(1))
+            val = float(val_str)
+            return val if 0 < val <= 5_000_000 else None
         except ValueError:
             pass
     return None
@@ -572,6 +629,11 @@ class ListingParser:
         else:
             category = infer_category(context_hint)
 
+        # Override category if title explicitly specifies rental (e.g. "Cho thuê nhà phố...")
+        title_lower = title.lower()
+        if category == Category.SALE and re.search(r"\b(cho thuê|cho thue)\b", title_lower) and not re.search(r"\b(bán|ban)\b", title_lower):
+            category = Category.RENT
+
         raw_prop_type = self._extract_val(raw_item, "property_type")
         if raw_prop_type is not None:
             prop_type_str = self._map_enum_value("property_type", raw_prop_type, PropertyType.OTHER.value)
@@ -613,9 +675,12 @@ class ListingParser:
         else:
             url = ""
 
-        # Coordinates
+        # Coordinates with Vietnam bounding box sanity check (lat: 8..24, lng: 102..110.5)
         lng = safe_float(self._extract_val(raw_item, "lng"))
         lat = safe_float(self._extract_val(raw_item, "lat"))
+        if lat is not None and lng is not None:
+            if not (8.0 <= lat <= 24.0 and 102.0 <= lng <= 110.5):
+                lat, lng = None, None
 
         # Published date parsing
         pub_raw = self._extract_val(raw_item, "published_at")

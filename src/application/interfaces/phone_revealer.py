@@ -30,3 +30,4 @@ class PhoneListingRepositoryProtocol(Protocol):
     ) -> str:
         """Persist revealed phone to advertiser and ensure listing is linked."""
         ...
+

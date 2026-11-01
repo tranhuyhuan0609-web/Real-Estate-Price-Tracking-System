@@ -615,3 +615,78 @@ def test_strict_area_parsing():
     # Text without area unit should not extract arbitrary numbers
     assert parse_vietnamese_area("mặt tiền 5m, 3 tầng") is None
     assert parse_vietnamese_area("căn hộ 2 phòng ngủ") is None
+
+
+def test_area_thousand_separators():
+    from src.infrastructure.crawler.parser import parse_vietnamese_area
+    # Vietnamese thousand separator with dot or comma
+    assert parse_vietnamese_area("1.200 m²") == 1200.0
+    assert parse_vietnamese_area("1.675 m²") == 1675.0
+    assert parse_vietnamese_area("1,596 m2") == 1596.0
+    assert parse_vietnamese_area("10.000 m²") == 10000.0
+    assert parse_vietnamese_area("1.200,5 m²") == 1200.5
+    # Standard decimal areas
+    assert parse_vietnamese_area("85.5 m²") == 85.5
+    assert parse_vietnamese_area("85,5 m2") == 85.5
+
+
+def test_price_sanity_bounds_and_unit_price():
+    from src.infrastructure.crawler.parser import parse_vietnamese_price
+    # Outlier / typo > 5,000 tỷ
+    vnd, pm2 = parse_vietnamese_price("15666000 tỷ", area=348.0)
+    assert vnd is None
+    assert pm2 is None
+
+    # Price per m without area should not be treated as total property price
+    vnd2, pm2_2 = parse_vietnamese_price("48 triệu/m", area=None)
+    assert vnd2 is None
+    assert pm2_2 == 48_000_000.0
+
+    # Normal valid price
+    vnd3, pm2_3 = parse_vietnamese_price("4.5 tỷ", area=50.0)
+    assert vnd3 == 4_500_000_000.0
+    assert pm2_3 == 90_000_000.0
+
+
+def test_category_rental_title_override(seed_row):
+    from src.domain.entities import Category
+    from src.infrastructure.database.config_mapping import row_to_config
+    config = row_to_config(seed_row)
+    parser = ListingParser(config)
+
+    # Title explicitly says "cho thuê" but category was mapped to sale
+    raw_item = {
+        "code": 999,
+        "title": "Top nhà phố cho thuê vị trí đẹp trung tâm Q1",
+        "category": {"value": "mua_ban"},  # Mapped to sale by default
+    }
+    parsed = parser.parse_item(raw_item)
+    assert parsed.category == Category.RENT
+
+
+def test_vietnam_coordinates_bounding_box(seed_row):
+    from src.infrastructure.database.config_mapping import row_to_config
+    config = row_to_config(seed_row)
+    parser = ListingParser(config)
+
+    # Coordinates in Central Africa (lat=10.0, lng=23.0) -> should be discarded
+    raw_item_africa = {
+        "code": 1001,
+        "title": "Bán nhà đẹp",
+        "lat": 10.0,
+        "lng": 23.0,
+    }
+    parsed_africa = parser.parse_item(raw_item_africa)
+    assert parsed_africa.details.lat is None
+    assert parsed_africa.details.lng is None
+
+    # Valid coordinates in Vietnam (HCMC: ~10.77, ~106.69)
+    raw_item_vn = {
+        "code": 1002,
+        "title": "Bán nhà đẹp",
+        "lat": 10.77,
+        "lng": 106.69,
+    }
+    parsed_vn = parser.parse_item(raw_item_vn)
+    assert parsed_vn.details.lat == 10.77
+    assert parsed_vn.details.lng == 106.69

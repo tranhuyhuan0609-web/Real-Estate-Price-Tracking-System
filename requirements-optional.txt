@@ -1,2 +1,3 @@
 # Optional dependencies for dynamic browser automation & phone revealing
 playwright>=1.49.0
+

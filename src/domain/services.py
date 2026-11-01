@@ -173,6 +173,8 @@ def parse_vietnamese_address(
         ward = None
 
     if not raw_address:
+        if canonicalize:
+            city, district, ward = canonicalize_vietnamese_location(city, district, ward)
         return {
             "street_name": street,
             "ward_name": ward,
@@ -185,6 +187,8 @@ def parse_vietnamese_address(
     parts = [p.strip() for p in re.split(r"[,;]|\s+-\s+", addr) if p.strip()]
 
     if not parts:
+        if canonicalize:
+            city, district, ward = canonicalize_vietnamese_location(city, district, ward)
         return {
             "street_name": street,
             "ward_name": ward,
