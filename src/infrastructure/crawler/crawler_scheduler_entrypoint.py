@@ -110,7 +110,8 @@ class CrawlerSchedulerService:
                 logger.debug("Site '%s' is already currently crawling. Skipping.", site_id)
                 continue
 
-            interval_sec = cfg.get("interval_seconds") or 300
+            interval_sec = cfg.get("interval_seconds")
+            has_interval = interval_sec is not None and interval_sec > 0
             last_run_at = cfg.get("last_run_at")
             schedule_times = cfg.get("schedule_times") or []
 
@@ -133,16 +134,20 @@ class CrawlerSchedulerService:
                 except Exception:
                     continue
 
-            # Check interval due
+            # Check if due to run
             is_due = False
-            if last_run_at is None:
+            if is_full_sweep:
                 is_due = True
-                logger.info("Site '%s' has never run yet. Triggering initial crawl.", site_id)
-            else:
-                elapsed = (now_utc - last_run_at).total_seconds()
-                if elapsed >= interval_sec or is_full_sweep:
+                logger.info("Site '%s' is due for scheduled FULL SWEEP (slot: %s).", site_id, self._last_full_sweep_slot.get(site_id))
+            elif has_interval:
+                if last_run_at is None:
                     is_due = True
-                    logger.info("Site '%s' is due (elapsed: %.1fs >= interval: %ds).", site_id, elapsed, interval_sec)
+                    logger.info("Site '%s' has never run yet. Triggering initial incremental crawl.", site_id)
+                else:
+                    elapsed = (now_utc - last_run_at).total_seconds()
+                    if elapsed >= interval_sec:
+                        is_due = True
+                        logger.info("Site '%s' is due for incremental crawl (elapsed: %.1fs >= interval: %ds).", site_id, elapsed, interval_sec)
 
             if is_due:
                 mode = RunMode.FULL_SWEEP if is_full_sweep else RunMode.INCREMENTAL
