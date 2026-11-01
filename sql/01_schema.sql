@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS crawler_configs (
     enabled BOOLEAN NOT NULL DEFAULT true,
     crawler_type TEXT NOT NULL DEFAULT 'rest_api',
     schedule_times TEXT[] NOT NULL DEFAULT '{}',
-    interval_seconds INT NOT NULL DEFAULT 300,
+    interval_seconds INT DEFAULT 300,
     config_json JSONB NOT NULL,
     last_run_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
