@@ -690,3 +690,62 @@ def test_vietnam_coordinates_bounding_box(seed_row):
     parsed_vn = parser.parse_item(raw_item_vn)
     assert parsed_vn.details.lat == 10.77
     assert parsed_vn.details.lng == 106.69
+
+
+def test_decode_cloudflare_email():
+    from src.infrastructure.crawler.parser import decode_cloudflare_email
+
+    # 4135332e26283431012c2e26286f372f decodes with XOR 0x41 to trogiup@mogi.vn
+    assert decode_cloudflare_email("4135332e26283431012c2e26286f372f") == "trogiup@mogi.vn"
+    assert decode_cloudflare_email("invalid_hex") is None
+    assert decode_cloudflare_email("12") is None
+    assert decode_cloudflare_email(None) is None
+
+
+def test_clean_email_rules():
+    from src.infrastructure.crawler.parser import clean_email
+
+    # Valid email
+    assert clean_email("chinhchu@gmail.com") == "chinhchu@gmail.com"
+    # Mailto link
+    assert clean_email("mailto:nam.bds@gmail.com?subject=Inquiry") == "nam.bds@gmail.com"
+    # Homedy chat prefix
+    assert clean_email("chatpostinfo_manhdung3107@gmail.com") == "manhdung3107@gmail.com"
+    assert clean_email("pj_manhdung3107@gmail.com") == "manhdung3107@gmail.com"
+    # Cafeland avatar filename
+    assert clean_email("https://nhadat.cafeland.vn/avatar/thoaii.propty@gmail.com-1706586592-nhadat.cafeland.vn.jpg") == "thoaii.propty@gmail.com"
+    # Masked email with asterisks MUST be rejected
+    assert clean_email("hoan***@gmail.com") is None
+    assert clean_email("a***b@yahoo.com") is None
+    assert clean_email("n...y@domain.com") is None
+    # Platform customer support emails MUST be rejected
+    assert clean_email("lienhe@homedy.com") is None
+    assert clean_email("trogiup@mogi.vn") is None
+    assert clean_email("info@cafeland.vn") is None
+    assert clean_email("support@batdongsan.vn") is None
+    assert clean_email("contact@meeyland.com") is None
+
+
+def test_unmask_email_from_description_when_field_masked(seed_row):
+    from src.infrastructure.crawler.parser import ListingParser
+    from src.infrastructure.database.config_mapping import row_to_config
+
+    config = row_to_config(seed_row)
+    parser = ListingParser(config)
+
+    # Item where structured contact.email is masked with *, but description contains real unmasked email
+    item = parser.parse_item({
+        "code": 8888,
+        "title": "Bán nhà quận 1 chính chủ",
+        "contact": {
+            "fullName": "Nguyễn Hoàng",
+            "phones": ["0903123456"],
+            "email": "hoang***@gmail.com",
+        },
+        "description": "Bán gấp nhà trung tâm Q1. Liên hệ chính chủ qua email: hoang.bds.q1@gmail.com hoặc SĐT 0903.123.456",
+    })
+
+    assert item.advertiser is not None
+    assert item.advertiser.phone == "0903123456"
+    # Masked 'hoang***@gmail.com' was unmasked and replaced by 'hoang.bds.q1@gmail.com' from description!
+    assert item.advertiser.email == "hoang.bds.q1@gmail.com"

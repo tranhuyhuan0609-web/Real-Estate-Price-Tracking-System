@@ -139,3 +139,26 @@ async def test_reveal_phone_use_case_creates_advertiser_if_missing():
     assert result["status"] == "revealed"
     assert mock_cursor.execute.call_count == 3  # SELECT, INSERT advertisers, UPDATE listings
     assert mock_conn.commit.called
+
+
+def test_revealer_extracts_email_from_html():
+    revealer = PhoneRevealer()
+
+    # Cloudflare data-cfemail: XOR key 0x12 -> decoded
+    # Let's encode test@example.com with key 0x12:
+    # 't' (0x74 ^ 0x12 = 0x66), 'e' (0x65 ^ 0x12 = 0x77), ...
+    cf_hex = "126677616652776a737f627e773c717d7f"  # test@example.com
+    html_cf = f'<span class="__cf_email__" data-cfemail="{cf_hex}">[email&#160;protected]</span>'
+    assert revealer.extract_email_from_html(html_cf) == "test@example.com"
+
+    # Homedy chat attribute
+    html_homedy = '<a class="btn chatpostinfo" data-id="chatpostinfo_owner@domain.com">Chat</a>'
+    assert revealer.extract_email_from_html(html_homedy) == "owner@domain.com"
+
+    # Mailto link
+    html_mailto = '<a href="mailto:broker@realestate.vn">Email me</a>'
+    assert revealer.extract_email_from_html(html_mailto) == "broker@realestate.vn"
+
+    # Text fallback
+    html_text = '<p>Liên hệ chính chủ: minh.land@gmail.com</p>'
+    assert revealer.extract_email_from_html(html_text) == "minh.land@gmail.com"

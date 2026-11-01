@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Protocol
+from typing import Any, Dict, Optional, Protocol, Tuple
 
 
 class PhoneRevealerProtocol(Protocol):
@@ -10,6 +10,14 @@ class PhoneRevealerProtocol(Protocol):
 
     async def reveal_phone(self, url: str, source: str) -> Optional[str]:
         """Reveal unmasked phone number from page or detail API."""
+        ...
+
+    async def reveal_email(self, url: str, source: str) -> Optional[str]:
+        """Reveal unmasked email from page or detail API."""
+        ...
+
+    async def reveal_contact(self, url: str, source: str) -> Tuple[Optional[str], Optional[str]]:
+        """Reveal unmasked phone and email in a single pass."""
         ...
 
 
@@ -29,5 +37,17 @@ class PhoneListingRepositoryProtocol(Protocol):
         phone: str,
     ) -> str:
         """Persist revealed phone to advertiser and ensure listing is linked."""
+        ...
+
+    async def update_advertiser_contact(
+        self,
+        listing_key: str,
+        source: str,
+        advertiser_id: Optional[str],
+        advertiser_name: Optional[str],
+        phone: Optional[str] = None,
+        email: Optional[str] = None,
+    ) -> str:
+        """Persist revealed phone and/or email to advertiser and ensure listing is linked."""
         ...
 

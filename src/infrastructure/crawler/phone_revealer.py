@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
+from typing import Optional, Tuple
 import httpx
 from parsel import Selector
+from src.infrastructure.crawler.parser import (
+    clean_email,
+    decode_cloudflare_email,
+    extract_email_from_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -223,3 +228,93 @@ class PhoneRevealer:
 
         return None
 
+
+    def extract_email_from_html(self, html: str) -> Optional[str]:
+        """Extract unmasked advertiser email from HTML string using multi-tier heuristics."""
+        if not html:
+            return None
+
+        sel = Selector(text=html)
+
+        # 1. Check Cloudflare data-cfemail attribute
+        cf_matches = sel.css('[data-cfemail]::attr(data-cfemail), span.__cf_email__::attr(data-cfemail)').getall()
+        for cf in cf_matches:
+            decoded = decode_cloudflare_email(cf)
+            if decoded:
+                cleaned = clean_email(decoded)
+                if cleaned:
+                    logger.info("Found email via Cloudflare data-cfemail: %s", cleaned)
+                    return cleaned
+
+        # 2. Check Homedy chat attributes (chatpostinfo_..., pj_...)
+        chat_matches = sel.css('a[data-id*="chatpostinfo_"]::attr(data-id), div[data-id*="chatpostinfo_"]::attr(data-id), [id*="pj_"]::attr(id)').getall()
+        for ch in chat_matches:
+            cleaned = clean_email(ch)
+            if cleaned:
+                logger.info("Found email via chat attribute: %s", cleaned)
+                return cleaned
+
+        # 3. Check data-email / data-contact-email attributes
+        for attr in ["data-email", "data-contact-email", "data-user-email"]:
+            val = sel.css(f"[{attr}]::attr({attr})").get()
+            cleaned = clean_email(val)
+            if cleaned:
+                logger.info("Found email via attribute [%s]: %s", attr, cleaned)
+                return cleaned
+
+        # 4. Check mailto: links
+        mailto_links = sel.css('a[href^="mailto:"]::attr(href)').getall()
+        for link in mailto_links:
+            cleaned = clean_email(link)
+            if cleaned:
+                logger.info("Found email via mailto: link: %s", cleaned)
+                return cleaned
+
+        # 5. Check avatar URL containing email (Cafeland)
+        avatar_urls = sel.css('img.avatar::attr(src), .user-avatar img::attr(src), img[src*="@"]::attr(src)').getall()
+        for src in avatar_urls:
+            cleaned = clean_email(src)
+            if cleaned:
+                logger.info("Found email via avatar src: %s", cleaned)
+                return cleaned
+
+        # 6. Fallback: regex scan text content
+        return extract_email_from_text(html)
+
+    async def reveal_email(
+        self,
+        url: str,
+        site_id: str = "",
+        existing_email: Optional[str] = None,
+    ) -> Optional[str]:
+        """Reveal unmasked email on demand."""
+        cleaned = clean_email(existing_email)
+        if cleaned:
+            return cleaned
+
+        if not url:
+            return None
+
+        try:
+            async with httpx.AsyncClient(headers=self.headers, timeout=self.timeout_sec, follow_redirects=True) as client:
+                resp = await client.get(url)
+                if resp.status_code < 400:
+                    email = self.extract_email_from_html(resp.text)
+                    if email:
+                        return email
+        except Exception as exc:
+            logger.debug("Failed to fetch %s for email reveal: %s", url, exc)
+
+        return None
+
+    async def reveal_contact(
+        self,
+        url: str,
+        site_id: str = "",
+        existing_phone: Optional[str] = None,
+        existing_email: Optional[str] = None,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Reveal both unmasked phone and email in a single pass."""
+        p = await self.reveal_phone(url=url, site_id=site_id, existing_phone=existing_phone)
+        e = await self.reveal_email(url=url, site_id=site_id, existing_email=existing_email)
+        return (p, e)
