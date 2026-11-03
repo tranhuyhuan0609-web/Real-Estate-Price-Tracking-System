@@ -25,6 +25,7 @@ from realestate.domain.entities.listing import (
     PropertyType,
     RawEventMessage,
 )
+from realestate.domain.value_objects.listing_key import ListingKeyError
 
 __all__ = [
     "AdvertiserData",
@@ -34,6 +35,7 @@ __all__ = [
     "CrawlerConfig",
     "DetailPageSettings",
     "ListingDetailsData",
+    "ListingKeyError",
     "ListingStatus",
     "NonBlank",
     "PaginationSettings",
@@ -48,4 +50,3 @@ __all__ = [
     "RunMode",
     "StrictBaseModel",
 ]
-

@@ -5,13 +5,13 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 from pymongo import AsyncMongoClient, UpdateOne
-from realestate.application.ports.bronze_repository import BronzeRepositoryProtocolProtocol
+from realestate.application.ports.bronze_repository import BronzeRepository
 from realestate.domain.entities import RawEventMessage
 
 logger = logging.getLogger(__name__)
 
 
-class MongoBronzeRepositoryProtocol(BronzeRepositoryProtocol):
+class MongoBronzeRepository(BronzeRepository):
     """Bronze repository that persists raw scraped items asynchronously into MongoDB."""
 
     def __init__(

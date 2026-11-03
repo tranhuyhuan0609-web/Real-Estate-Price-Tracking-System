@@ -28,7 +28,7 @@ async def run_replay_dlq(source: str = "mongo", site_id: Optional[str] = None, l
     container = AppContainer()
     await container.start()
     try:
-        from scripts.replay_dlq import replay_from_mongo
+        from realestate.infrastructure.messaging.dlq import replay_from_mongo
         logger.info("Replaying up to %d messages from DLQ (%s)...", limit, source)
         count = await replay_from_mongo(
             mongo_uri=container.settings.mongo_uri,

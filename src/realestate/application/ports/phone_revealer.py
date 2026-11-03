@@ -15,7 +15,7 @@ class PhoneRevealerProtocol(Protocol):
         ...
 
 
-class PhoneListingRepositoryProtocol(Protocol):
+class PhoneListingRepository(Protocol):
     """Protocol for fetching and persisting revealed advertiser phone numbers."""
 
     async def get_listing_for_phone_reveal(self, listing_key: str) -> Optional[Dict[str, Any]]:

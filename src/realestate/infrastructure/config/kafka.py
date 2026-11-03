@@ -1,5 +1,5 @@
 from pydantic import Field
-from src.infrastructure.config.base import BaseSubSettings
+from realestate.infrastructure.config.base import BaseSubSettings
 
 
 class KafkaSettings(BaseSubSettings):

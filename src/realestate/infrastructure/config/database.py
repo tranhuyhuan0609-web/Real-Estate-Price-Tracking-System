@@ -1,7 +1,7 @@
 from typing import Optional
 from urllib.parse import quote
 from pydantic import Field, SecretStr
-from src.infrastructure.config.base import BaseSubSettings
+from realestate.infrastructure.config.base import BaseSubSettings
 
 
 class DatabaseSettings(BaseSubSettings):

@@ -4,13 +4,13 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, Optional
 from psycopg.rows import dict_row
 
-from realestate.application.ports.crawl_run_repository import CrawlRunRepositoryProtocolProtocol
+from realestate.application.ports.crawl_run_repository import CrawlRunRepository
 
 if TYPE_CHECKING:
     from psycopg_pool import AsyncConnectionPool
 
 
-class PostgresCrawlRunRepositoryProtocol(CrawlRunRepositoryProtocol):
+class PostgresCrawlRunRepository(CrawlRunRepository):
     """Manages crawl run sessions and metrics in PostgreSQL."""
 
     def __init__(self, pool: "AsyncConnectionPool") -> None:

@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from src.application.exceptions.config_exceptions import ConfigCorruptedError
+from realestate.domain.exceptions import ConfigCorruptedError
 from realestate.domain.entities.crawler_config import CrawlerConfig
 
 # Stored as real columns of crawler_configs; everything else is config_json.

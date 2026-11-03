@@ -1,4 +1,4 @@
-.PHONY: help up down test lint migrate seed clean
+.PHONY: help up down test lint migrate clean
 
 help:
 	@echo "Real Estate Price Tracking System commands:"
@@ -10,17 +10,17 @@ help:
 	@echo "  make clean    - Clean up temporary python caches"
 
 up:
-	docker compose up -d --build
+	docker compose -f docker/docker-compose.yml up -d --build
 
 down:
-	docker compose down
+	docker compose -f docker/docker-compose.yml down
 
 test:
 	pytest tests/ -v
 
 lint:
 	ruff check src/ tests/
-	mypy src/
+	mypy src/realestate/
 
 migrate:
 	alembic upgrade head
@@ -28,4 +28,3 @@ migrate:
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
-

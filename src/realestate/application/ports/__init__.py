@@ -5,7 +5,7 @@ from realestate.application.ports.event_publisher import EventPublisher
 from realestate.application.ports.lifecycle_repository import LifecycleRepository
 from realestate.application.ports.listing_repository import ListingRepository
 from realestate.application.ports.phone_revealer import (
-    PhoneListingRepositoryProtocol,
+    PhoneListingRepository,
     PhoneRevealerProtocol,
 )
 from realestate.application.ports.spider import Spider
@@ -17,7 +17,7 @@ __all__ = [
     "EventPublisher",
     "LifecycleRepository",
     "ListingRepository",
-    "PhoneListingRepositoryProtocol",
+    "PhoneListingRepository",
     "PhoneRevealerProtocol",
     "Spider",
 ]

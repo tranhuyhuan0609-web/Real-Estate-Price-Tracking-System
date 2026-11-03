@@ -1,4 +1,4 @@
-"""PostgreSQL implementation of PhoneListingRepositoryProtocolProtocol."""
+"""PostgreSQL implementation of PhoneListingRepository."""
 
 from __future__ import annotations
 
@@ -12,7 +12,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class PgPhoneListingRepositoryProtocol:
+class PgPhoneRepository:
+    pass
+
+class PgPhoneListingRepository(PgPhoneRepository):
     """Handles database queries and updates for phone reveal operations."""
 
     def __init__(self, pool: "AsyncConnectionPool") -> None:

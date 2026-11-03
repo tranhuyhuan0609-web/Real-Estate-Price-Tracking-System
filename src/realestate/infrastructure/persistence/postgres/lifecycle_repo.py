@@ -1,4 +1,4 @@
-"""PostgreSQL implementation of LifecycleRepositoryProtocol."""
+"""PostgreSQL implementation of LifecycleRepository."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 from psycopg.rows import dict_row
-from realestate.application.ports.lifecycle_repository import LifecycleRepositoryProtocolProtocol
+from realestate.application.ports.lifecycle_repository import LifecycleRepository
 
 if TYPE_CHECKING:
     from psycopg_pool import AsyncConnectionPool
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class PgLifecycleRepositoryProtocol(LifecycleRepositoryProtocol):
+class PgLifecycleRepository(LifecycleRepository):
     """PostgreSQL repository handling crawl run lifecycle progression and materialized view refreshes."""
 
     def __init__(self, pool: AsyncConnectionPool) -> None:

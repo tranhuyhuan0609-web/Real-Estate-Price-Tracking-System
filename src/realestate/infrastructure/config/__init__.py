@@ -1,13 +1,15 @@
-from realestate.infrastructure.config.app import AppConfig
-from realestate.infrastructure.config.database import DatabaseConfig
-from realestate.infrastructure.config.kafka import KafkaConfig
-from realestate.infrastructure.config.settings import Settings, get_settings, load_settings
+from realestate.infrastructure.config.app import AppSettings
+from realestate.infrastructure.config.base import BASE_DIR, BaseSubSettings
+from realestate.infrastructure.config.database import DatabaseSettings
+from realestate.infrastructure.config.kafka import KafkaSettings
+from realestate.infrastructure.config.settings import Settings, load_settings
 
 __all__ = [
-    "AppConfig",
-    "DatabaseConfig",
-    "KafkaConfig",
+    "AppSettings",
+    "BASE_DIR",
+    "BaseSubSettings",
+    "DatabaseSettings",
+    "KafkaSettings",
     "Settings",
-    "get_settings",
     "load_settings",
 ]

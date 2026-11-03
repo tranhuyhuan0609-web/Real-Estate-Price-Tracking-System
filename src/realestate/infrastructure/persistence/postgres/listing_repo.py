@@ -7,7 +7,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, List, Optional, Tuple
 from psycopg.rows import dict_row
-from realestate.application.ports.listing_repository import ListingRepositoryProtocolProtocol
+from realestate.application.ports.listing_repository import ListingRepository
 from realestate.domain.entities import (
     AdvertiserData,
     ParsedListingItem,
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class PgListingRepositoryProtocol(ListingRepositoryProtocol):
+class PgListingRepository(ListingRepository):
     """Manages transactional ingestion of Silver & Gold data models."""
 
     def __init__(self, pool: "AsyncConnectionPool") -> None:

@@ -7,7 +7,7 @@ import re
 from typing import Any, Dict
 
 from realestate.application.ports.phone_revealer import (
-    PhoneListingRepositoryProtocol,
+    PhoneListingRepository,
     PhoneRevealerProtocol,
 )
 
@@ -19,7 +19,7 @@ class RevealPhoneUseCase:
 
     def __init__(
         self,
-        repo: PhoneListingRepositoryProtocol,
+        repo: PhoneListingRepository,
         revealer: PhoneRevealerProtocol,
     ) -> None:
         if repo is None:
@@ -58,7 +58,7 @@ class RevealPhoneUseCase:
                 "status": "not_found",
             }
 
-        persisted_phone = await self.repo.update_advertiser_phone(
+        await self.repo.update_advertiser_phone(
             listing_key=listing_key,
             source=source,
             advertiser_id=advertiser_id,
@@ -68,7 +68,7 @@ class RevealPhoneUseCase:
 
         return {
             "listing_key": listing_key,
-            "advertiser_phone": persisted_phone,
+            "advertiser_phone": revealed_phone,
             "status": "revealed",
         }
 
