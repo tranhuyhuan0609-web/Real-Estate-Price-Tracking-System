@@ -22,6 +22,7 @@ class ProcessSilverGoldUseCase:
             item=event.parsed_data,
             crawl_run_id=event.crawl_run_id,
             update_crawl_run=update_crawl_run,
+            event_time=event.scraped_at,
         )
         logger.debug(
             "Processed Silver/Gold for '%s' (is_new=%s, price_changed=%s)",
@@ -35,7 +36,6 @@ class ProcessSilverGoldUseCase:
         """Process a batch of event messages into Silver/Gold storage in a single transaction."""
         if not events:
             return []
-        batch = [(e.parsed_data, e.crawl_run_id) for e in events]
+        batch = [(e.parsed_data, e.crawl_run_id, e.scraped_at) for e in events]
         results = await self.pg_repo.ingest_batch_transactional(batch)
         return [(events[i], results[i][0], results[i][1]) for i in range(len(events))]
-

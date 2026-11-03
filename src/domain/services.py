@@ -39,14 +39,14 @@ def generate_fingerprint(
     norm_city = (city_name or city_code or "").strip().lower()
     norm_district = (district_name or district_code or "").strip().lower()
     norm_ward = (ward_name or ward_code or "").strip().lower()
-    norm_phone = re.sub(r"\D", "", advertiser_phone or "")
 
-    raw_signature = f"{norm_title}|{norm_area}|{norm_city}|{norm_district}|{norm_ward}|{norm_phone}"
+    raw_signature = f"{norm_title}|{norm_area}|{norm_city}|{norm_district}|{norm_ward}"
     return hashlib.sha256(raw_signature.encode("utf-8")).hexdigest()
 
 
 PROVINCE_KEYWORDS = [
-    "hồ chí minh", "tp.hcm", "tphcm", "sài gòn", "hà nội", "đà nẵng", "hải phòng", "cần thơ",
+    "hồ chí minh", "tp.hcm", "tphcm", "tp hcm", "tp. hcm", "hcm", "hcmc", "sài gòn", "saigon",
+    "hà nội", "tp.hn", "tphn", "tp hn", "hn", "đà nẵng", "hải phòng", "cần thơ",
     "an giang", "bà rịa - vũng tàu", "bà rịa vũng tàu", "vũng tàu", "bắc giang", "bắc kạn",
     "bạc liêu", "bắc ninh", "bến tre", "bình định", "bình dương", "bình phước", "bình thuận",
     "cà mau", "cao bằng", "đắk lắk", "đắk nông", "điện biên", "đồng nai", "đồng tháp",
@@ -62,6 +62,34 @@ PROVINCE_KEYWORDS = [
 DISTRICT_PREFIXES = r"(?:quận|huyện|thị xã|thành phố|tp\.?|tx\.?|q\.?|h\.?)"
 WARD_PREFIXES = r"(?:phường|xã|thị trấn|tt\.?|p\.?|x\.?)"
 STREET_PREFIXES = r"(?:đường|phố|ngõ|ngách|hẻm|số|kdc|kđt|khu đô thị|khu dân cư)"
+
+
+def _is_province_token(part: str) -> bool:
+    """Check if a string token is a province/city name, avoiding false positives on ward/street names."""
+    if not part:
+        return False
+    p_lower = part.strip().lower()
+    # Skip if explicitly prefixed with ward, district, or street indicators
+    if re.match(
+        r"^(?:phường|p[\s.]|xã|x[\s.]|thị trấn|tt[\s.]|quận|q[\s.]|huyện|h[\s.]|đường|ngõ|ngách|hẻm|phố|số)\b",
+        p_lower,
+    ):
+        return False
+    no_space = re.sub(r"[.\s]", "", p_lower)
+    if no_space in (
+        "tphcm", "hcm", "hcmc", "tphồchíminh", "thànhphốhồchíminh", "hồchíminh", "saigon", "sàigòn",
+        "tphànội", "thànhphốhànội", "hànội", "hn",
+        "tpđànẵng", "thànhphốđànẵng", "đànẵng",
+        "tphảiphòng", "thànhphốhảiphòng", "hảiphòng",
+        "tpcầnthơ", "thànhphốcầnthơ", "cầnthơ",
+    ):
+        return True
+    clean_p = re.sub(r"^(?:tỉnh|thành phố|tp\.?)\s+", "", p_lower).strip()
+    clean_no_space = re.sub(r"[.\s]", "", clean_p)
+    for prov in PROVINCE_KEYWORDS:
+        if clean_p == prov or clean_no_space == re.sub(r"[.\s]", "", prov):
+            return True
+    return False
 
 
 def canonicalize_vietnamese_location(
@@ -199,9 +227,7 @@ def parse_vietnamese_address(
     # 1. Identify City/Province (usually rightmost)
     if not city:
         for idx in range(len(parts) - 1, -1, -1):
-            p_lower = parts[idx].lower()
-            clean_p = re.sub(r"^(?:tỉnh|thành phố|tp\.?)\s+", "", p_lower).strip()
-            if any(clean_p == prov or prov in clean_p for prov in PROVINCE_KEYWORDS):
+            if _is_province_token(parts[idx]):
                 city = parts.pop(idx)
                 break
 
@@ -210,7 +236,7 @@ def parse_vietnamese_address(
         if len(parts) == 1:
             p = parts[0]
             p_lower = p.lower()
-            if not city and any(prov in p_lower for prov in PROVINCE_KEYWORDS):
+            if not city and _is_province_token(p):
                 city = parts.pop(0)
             elif not district and (re.match(rf"^{DISTRICT_PREFIXES}\s+", p_lower) or not ward):
                 district = parts.pop(0)

@@ -1,0 +1,54 @@
+site_id: bds_com_vn
+name: BDS.com.vn - Mua bán BĐS
+enabled: true
+crawler_type: html
+schedule_times:
+- 05:00
+- '11:00'
+- '17:00'
+- '23:00'
+interval_seconds: null
+request:
+  url: https://bds.com.vn/mua-ban-nha-dat-page{page}
+  method: GET
+  headers:
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/128.0.0.0 Safari/537.36
+  query_params:
+    sort: date_desc
+pagination:
+  strategy: page_number
+  page_param: page
+  start_page: 1
+  page_size: 20
+  max_pages_incremental: 10
+  max_pages_full_sweep: 300
+rate_limit:
+  download_delay_sec: 0.5
+  timeout_sec: 15.0
+  retry_times: 3
+response_mapping:
+  items_path: div.item-nhadat
+  fields:
+    external_id: a.title-item-nhadat::attr(href)
+    url: a.title-item-nhadat::attr(href)
+    title: a.title-item-nhadat::text
+    price_vnd: span.price-item-nhadat:first-of-type::text
+    area_m2: span.price-item-nhadat:nth-of-type(2)::text
+    city_name: span.label-adress::text
+    thumbnail_url: a.image-item-nhadat img::attr(src)
+    advertiser_phone: a.phone-member::attr(href), a[href^="tel:"]::attr(href), a.phone-member::text
+    advertiser_name: .user-name::text, .agent-name::text, .name-member::text, a.phone-member::attr(data-name)
+    advertiser_email: span.__cf_email__::attr(data-cfemail), a[href^="mailto:"]::attr(href),
+      [data-email]::attr(data-email)
+    description: div.box-description::text
+    published_at: span.flr::text, span.label-time::text
+detail_page:
+  enabled: true
+  url_field: url
+  fields:
+    advertiser_name: span.member-name::text
+    description: div.ct-pr-sum::text, .box-description::text
+    media_list: div.image-detail img::attr(src), .gallery img::attr(src)
+    breadcrumb: .breadcrumb *::text, ul.breadcrumb *::text

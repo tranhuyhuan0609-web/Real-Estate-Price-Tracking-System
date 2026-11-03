@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict
 
 from src.application.interfaces.phone_revealer import (
     PhoneListingRepositoryProtocol,
@@ -19,27 +19,15 @@ class RevealPhoneUseCase:
 
     def __init__(
         self,
-        repo_or_pool: Union[PhoneListingRepositoryProtocol, Any, None] = None,
-        revealer: Optional[PhoneRevealerProtocol] = None,
-        *,
-        pool: Optional[Any] = None,
-        repo: Optional[PhoneListingRepositoryProtocol] = None,
+        repo: PhoneListingRepositoryProtocol,
+        revealer: PhoneRevealerProtocol,
     ) -> None:
-        target = repo if repo is not None else (repo_or_pool if repo_or_pool is not None else pool)
-        if target is None:
-            raise ValueError("Either 'repo' or 'pool' must be provided to RevealPhoneUseCase.")
-
-        if hasattr(target, "connection"):
-            from src.infrastructure.database.pg_phone_repo import PgPhoneListingRepository
-            self.repo: PhoneListingRepositoryProtocol = PgPhoneListingRepository(target)
-        else:
-            self.repo = target
-
-        if revealer is not None:
-            self.revealer = revealer
-        else:
-            from src.infrastructure.crawler.phone_revealer import PhoneRevealer
-            self.revealer = PhoneRevealer()
+        if repo is None:
+            raise ValueError("repo must be provided to RevealPhoneUseCase.")
+        if revealer is None:
+            raise ValueError("revealer must be provided to RevealPhoneUseCase.")
+        self.repo = repo
+        self.revealer = revealer
 
     async def execute(self, listing_key: str) -> Dict[str, Any]:
         """Fetch listing details, reveal unmasked phone number, and update database if found."""

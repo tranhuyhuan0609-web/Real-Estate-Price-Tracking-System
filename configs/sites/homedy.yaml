@@ -1,0 +1,59 @@
+site_id: homedy
+name: Homedy - Mua bán BĐS
+enabled: true
+crawler_type: html
+schedule_times:
+- 05:00
+- '11:00'
+- '17:00'
+- '23:00'
+interval_seconds: null
+request:
+  url: https://homedy.com/ban-nha-dat/p{page}
+  method: GET
+  headers:
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/128.0.0.0 Safari/537.36
+  query_params:
+    sort: new
+pagination:
+  strategy: page_number
+  page_param: p
+  start_page: 1
+  page_size: 20
+  max_pages_incremental: 10
+  max_pages_full_sweep: 300
+rate_limit:
+  download_delay_sec: 0.5
+  timeout_sec: 15.0
+  retry_times: 3
+response_mapping:
+  items_path: div.product-item
+  fields:
+    external_id: h3 a::attr(href)
+    url: h3 a::attr(href)
+    title: h3 a::text
+    price_vnd: span.price::text
+    area_m2: span.acreage::text
+    city_name: div.address::text, span.address::text, .address *::text
+    thumbnail_url: img.lazy::attr(data-src)
+detail_page:
+  enabled: true
+  url_field: url
+  fields:
+    advertiser_phone: '[data-mobile]::attr(data-mobile), a[ng-href*="tel:"]::attr(ng-href),
+      a[href^="tel:"]::attr(href), .mobile-number::text'
+    advertiser_name: .agent-inpage .flex-name::text, .flex-name::text, a.text-name::attr(title),
+      a.text-name::text, .agent-name::text
+    advertiser_email: span.__cf_email__::attr(data-cfemail), a.chatpostinfo::attr(data-id),
+      a[data-id*="chatpostinfo_"]::attr(data-id), div[data-id*="chatpostinfo_"]::attr(data-id),
+      a[id*="pj_"]::attr(id), [data-email]::attr(data-email), a[href^="mailto:"]::attr(href)
+    description: .description *::text, .product-description *::text, div.product-description::text,
+      .description::text
+    published_at: //p[contains(@class, ''lb-code'')][contains(text(), ''Ngày đăng'')]/following-sibling::p[contains(@class,
+      ''code'')][1]/text(), span.date::text, .product-date::text, .created-date::text,
+      .date::text
+    media_list: .gallery-item img::attr(data-src), .gallery-item img::attr(src), .swiper-slide
+      img::attr(src)
+    breadcrumb: .breadcrumb *::text, ol.breadcrumb *::text

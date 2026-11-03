@@ -1,0 +1,59 @@
+site_id: mogi_apartment
+name: Mogi - Mua Căn hộ Chung cư
+enabled: true
+crawler_type: html
+schedule_times:
+- 02:00
+- 08:00
+- '14:00'
+- '20:00'
+interval_seconds: null
+request:
+  url: https://mogi.vn/mua-can-ho-chung-cu
+  method: GET
+  headers:
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/128.0.0.0 Safari/537.36
+  query_params:
+    sort: date_desc
+pagination:
+  strategy: page_number
+  page_param: cp
+  start_page: 1
+  page_size: 20
+  max_pages_incremental: 10
+  max_pages_full_sweep: 300
+rate_limit:
+  download_delay_sec: 0.5
+  timeout_sec: 15.0
+  retry_times: 3
+response_mapping:
+  items_path: ul.props > li:not(.mogi-ad)
+  fields:
+    external_id: a.link-overlay::attr(href)
+    url: a.link-overlay::attr(href)
+    title: h2.prop-title::text
+    price_vnd: div.price::text
+    area_m2: ul.prop-attr li:nth-child(1)::text
+    city_name: div.prop-addr::text
+    thumbnail_url: div.prop-img img::attr(data-src)
+detail_page:
+  enabled: true
+  url_field: url
+  fields:
+    advertiser_phone: '[data-mobile]::attr(data-mobile), a[ng-href*="tel:"]::attr(ng-href),
+      a[href^="tel:"]::attr(href), .mobile-number::text'
+    advertiser_name: div.agent-widget div.agent-name a::text, div.agent-widget div.agent-name::text,
+      div.agent-name::text
+    advertiser_email: span.__cf_email__::attr(data-cfemail), a.chatpostinfo::attr(data-id),
+      a[data-id*="chatpostinfo_"]::attr(data-id), div[data-id*="chatpostinfo_"]::attr(data-id),
+      a[id*="pj_"]::attr(id), [data-email]::attr(data-email), a[href^="mailto:"]::attr(href)
+    description: div.info-content-body::text, .prop-info::text
+    media_list: div.media-item img::attr(data-src), .property-photos img::attr(data-src),
+      div.photo img::attr(src), .media-gallery img::attr(data-src)
+    published_at: //div[contains(@class, ''info-attr'')][span[contains(text(), ''Ngày
+      đăng'')]]/span[2]/text(), span.date::text, .prop-date::text, .date::text
+    legal_status: //div[contains(@class, ''info-attr'')][span[contains(text(), ''Pháp
+      lý'')]]/span[2]/text()
+    breadcrumb: .breadcrumb *::text, ol.breadcrumb *::text

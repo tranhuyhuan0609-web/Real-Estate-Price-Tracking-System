@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 from src.application.use_cases.apply_lifecycle_uc import ApplyLifecycleUseCase
+from src.infrastructure.database.pg_lifecycle_repo import PgLifecycleRepository
 
 
 def make_mock_pool(mock_cursor):
@@ -36,7 +37,8 @@ async def test_apply_lifecycle_full_sweep_success():
     mock_cursor.rowcount = 5  # 5 listings incremented, 2 expired
 
     mock_pool = make_mock_pool(mock_cursor)
-    uc = ApplyLifecycleUseCase(pool=mock_pool)
+    repo = PgLifecycleRepository(mock_pool)
+    uc = ApplyLifecycleUseCase(repo=repo)
     result = await uc.execute("run_fs_01")
 
     assert result["incremented"] == 5
@@ -56,7 +58,8 @@ async def test_apply_lifecycle_skips_incremental_run():
     }
 
     mock_pool = make_mock_pool(mock_cursor)
-    uc = ApplyLifecycleUseCase(pool=mock_pool)
+    repo = PgLifecycleRepository(mock_pool)
+    uc = ApplyLifecycleUseCase(repo=repo)
     result = await uc.execute("run_inc_01")
 
     assert result == {"incremented": 0, "expired": 0}

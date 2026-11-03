@@ -1,0 +1,87 @@
+site_id: nhatot
+name: Nhà Tốt - Mua bán BĐS
+enabled: true
+crawler_type: rest_api
+schedule_times:
+- 05:00
+- '11:00'
+- '17:00'
+- '23:00'
+interval_seconds: null
+request:
+  url: https://gateway.chotot.com/v1/public/ad-listing
+  method: GET
+  headers:
+    Accept: application/json
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/128.0.0.0 Safari/537.36
+  query_params:
+    region_v2: 13000
+    cg: 1000
+    st: s,k
+    sort: newest
+allowed_domains:
+- gateway.chotot.com
+- chotot.com
+- nhatot.com
+pagination:
+  strategy: offset_limit
+  page_param: o
+  limit_param: limit
+  start_page: 0
+  page_size: 20
+  max_pages_incremental: 10
+  max_pages_full_sweep: 1000
+  stop_when_empty_path: ads
+rate_limit:
+  download_delay_sec: 0.5
+  timeout_sec: 15.0
+  retry_times: 3
+response_mapping:
+  items_path: ads
+  fields:
+    external_id: list_id
+    url: share_url
+    title: subject
+    description: body
+    price_vnd: price
+    area_m2: size
+    facade_m: width
+    depth_m: length
+    legal_status: property_legal_document
+    published_at: date
+    lat: latitude
+    lng: longitude
+    city_name: region_name
+    district_name: area_name
+    ward_name: ward_name
+    advertiser_id: account_id
+    advertiser_name: seller_info.full_name, full_name, account_name
+    advertiser_phone: phone
+    advertiser_email: email
+    advertiser_is_verified: is_shop_verified
+    thumbnail_url: image
+    media_list: images
+    category: type
+    property_type: category
+  value_mappings:
+    legal_status:
+      '1': Đã có sổ
+      '2': Đang chờ sổ
+      '3': Giấy tờ khác
+      '4': Hợp đồng mua bán
+      '5': Đang chờ sổ
+      '6': Giấy tay / Vi bằng
+      '7': Giấy tờ hợp lệ khác
+      _default: Giấy tờ khác
+    category:
+      s: sale
+      u: rent
+      _default: sale
+    property_type:
+      '1010': apartment
+      '1020': house
+      '1030': land
+      '1040': land
+      '1050': commercial
+      _default: other

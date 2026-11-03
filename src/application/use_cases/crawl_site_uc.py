@@ -70,8 +70,9 @@ class CrawlSiteUseCase:
         elif self.spider_factory is not None:
             spider = self.spider_factory(config)
         else:
-            from src.infrastructure.crawler.spider_factory import create_spider
-            spider = create_spider(config)
+            raise ValueError(
+                f"No spider or spider_factory provided for crawl run on site '{site_id}'."
+            )
 
         items_count = 0
         batch: list[tuple[str, dict]] = []

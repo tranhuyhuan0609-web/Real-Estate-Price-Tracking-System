@@ -1,0 +1,53 @@
+site_id: muaban
+name: Muaban.net - Mua bán BĐS
+enabled: true
+crawler_type: html
+schedule_times:
+- 02:00
+- 08:00
+- '14:00'
+- '20:00'
+interval_seconds: null
+request:
+  url: https://muaban.net/bat-dong-san/ban-nha-dat-chung-cu?page={page}
+  method: GET
+  headers:
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/128.0.0.0 Safari/537.36
+  query_params: {}
+pagination:
+  strategy: page_number
+  page_param: page
+  start_page: 1
+  page_size: 20
+  max_pages_incremental: 10
+  max_pages_full_sweep: 300
+rate_limit:
+  download_delay_sec: 0.5
+  timeout_sec: 15.0
+  retry_times: 3
+response_mapping:
+  items_path: json:script#__NEXT_DATA__::text -> props.pageProps.classified.items
+  fields:
+    external_id: id
+    url: url
+    title: title
+    price_vnd: price
+    area_m2: attributes[0].value
+    city_name: location
+    thumbnail_url: covers[0]
+    media_list: covers
+    advertiser_phone: phone, contact.phone, a.phone-member::attr(href)
+    advertiser_name: contact_name, contact.name
+    advertiser_email: email, contact.email, a[href^="mailto:"]::attr(href), [data-email]::attr(data-email)
+    description: body
+    published_at: publish_at
+    lat: latitude
+    lng: longitude
+detail_page:
+  enabled: true
+  url_field: url
+  fields:
+    description: json:script#__NEXT_DATA__::text -> props.pageProps.classified.body
+    advertiser_name: json:script#__NEXT_DATA__::text -> props.pageProps.classified.contact_name

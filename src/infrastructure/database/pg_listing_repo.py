@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import logging
 from typing import TYPE_CHECKING, List, Optional, Tuple
@@ -53,6 +54,7 @@ class PgListingRepository(ListingRepository):
         cur,
         item: ParsedListingItem,
         crawl_run_id: str,
+        event_time: Optional[datetime] = None,
     ) -> Tuple[bool, bool]:
         """Internal worker executing upserts for advertiser, listing, details and price history."""
         # Step 1: Upsert Advertiser
@@ -60,7 +62,7 @@ class PgListingRepository(ListingRepository):
 
         # Step 2: Lock & query current listing
         await cur.execute(
-            "SELECT current_price_vnd, current_price_per_m2, price_status, status FROM listings WHERE listing_key = %s FOR UPDATE;",
+            "SELECT current_price_vnd, current_price_per_m2, price_status, status, advertiser_id FROM listings WHERE listing_key = %s FOR UPDATE;",
             (item.listing_key,),
         )
         existing = await cur.fetchone()
@@ -77,18 +79,18 @@ class PgListingRepository(ListingRepository):
                     current_price_vnd, current_price_per_m2, price_status, price_changed_at
                 ) VALUES (
                     %s, %s, %s, %s,
-                    %s, 'active', 0, NOW(), NOW(), %s,
+                    %s, 'active', 0, COALESCE(%s, NOW()), COALESCE(%s, NOW()), %s,
                     %s, %s, %s, %s, %s,
-                    %s, %s, %s, NOW()
+                    %s, %s, %s, COALESCE(%s, NOW())
                 );
             """
             await cur.execute(
                 insert_listing_query,
                 (
                     item.listing_key, item.property_fingerprint, item.source, item.external_id,
-                    advertiser_id, item.published_at,
+                    advertiser_id, event_time, event_time, item.published_at,
                     item.category.value, item.property_type.value, item.area_m2, item.facade_m, item.depth_m,
-                    item.current_price_vnd, item.current_price_per_m2, initial_status,
+                    item.current_price_vnd, item.current_price_per_m2, initial_status, event_time,
                 ),
             )
             # Insert Listing Details (Silver)
@@ -120,11 +122,11 @@ class PgListingRepository(ListingRepository):
                     INSERT INTO listing_price_history (
                         listing_key, crawl_run_id, price_vnd, price_per_m2,
                         price_diff_vnd, price_diff_percent, price_status, recorded_at
-                    ) VALUES (%s, %s, %s, %s, 0, 0, 'initial', NOW());
+                    ) VALUES (%s, %s, %s, %s, 0, 0, 'initial', COALESCE(%s, NOW()));
                 """
                 await cur.execute(
                     insert_history_query,
-                    (item.listing_key, crawl_run_id, item.current_price_vnd, item.current_price_per_m2),
+                    (item.listing_key, crawl_run_id, item.current_price_vnd, item.current_price_per_m2, event_time),
                 )
         else:
             # Existing listing: check price evolution
@@ -149,10 +151,15 @@ class PgListingRepository(ListingRepository):
                 new_price_m2 = None
                 new_price_status = "contact"
 
+            # Preserve established advertiser_id if new crawl has masked/missing phone
+            target_adv_id = advertiser_id
+            if existing.get("advertiser_id") and (not item.advertiser or not item.advertiser.phone):
+                target_adv_id = existing["advertiser_id"]
+
             # Unified single UPDATE statement for listings
             update_listing_query = """
                 UPDATE listings SET
-                    last_seen_at = NOW(),
+                    last_seen_at = GREATEST(listings.last_seen_at, COALESCE(%s, NOW())),
                     ended_at = NULL,
                     missing_count = 0,
                     status = 'active',
@@ -167,13 +174,14 @@ class PgListingRepository(ListingRepository):
                     current_price_vnd = CASE WHEN %s THEN %s ELSE current_price_vnd END,
                     current_price_per_m2 = CASE WHEN %s THEN %s ELSE current_price_per_m2 END,
                     price_status = CASE WHEN %s THEN %s ELSE price_status END,
-                    price_changed_at = CASE WHEN %s THEN NOW() ELSE price_changed_at END
+                    price_changed_at = CASE WHEN %s THEN COALESCE(%s, NOW()) ELSE price_changed_at END
                 WHERE listing_key = %s;
             """
             await cur.execute(
                 update_listing_query,
                 (
-                    advertiser_id,
+                    event_time,
+                    target_adv_id,
                     item.published_at,
                     item.property_fingerprint,
                     item.property_type.value,
@@ -184,7 +192,7 @@ class PgListingRepository(ListingRepository):
                     update_price, new_price_vnd,
                     update_price, new_price_m2,
                     update_price, new_price_status,
-                    update_price,
+                    update_price, event_time,
                     item.listing_key,
                 ),
             )
@@ -195,7 +203,7 @@ class PgListingRepository(ListingRepository):
                     INSERT INTO listing_price_history (
                         listing_key, crawl_run_id, price_vnd, price_per_m2,
                         price_diff_vnd, price_diff_percent, price_status, recorded_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW());
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, COALESCE(%s, NOW()));
                 """
                 await cur.execute(
                     insert_history_query,
@@ -207,6 +215,7 @@ class PgListingRepository(ListingRepository):
                         eval_res.price_diff_vnd,
                         eval_res.price_diff_percent,
                         eval_res.price_status.value,
+                        event_time,
                     ),
                 )
             # 2.1 & 3.1: Update listing_details only when distinct to eliminate MVCC bloat
@@ -255,6 +264,7 @@ class PgListingRepository(ListingRepository):
         item: ParsedListingItem,
         crawl_run_id: str,
         update_crawl_run: bool = True,
+        event_time: Optional[datetime] = None,
     ) -> Tuple[bool, bool]:
         """Execute atomic Silver & Gold ingestion within a transaction.
 
@@ -267,14 +277,14 @@ class PgListingRepository(ListingRepository):
         async with self.pool.connection() as conn:
             async with conn.transaction():
                 async with conn.cursor(row_factory=dict_row) as cur:
-                    is_new, price_changed = await self._ingest_item_with_cursor(cur, item, crawl_run_id)
+                    is_new, price_changed = await self._ingest_item_with_cursor(cur, item, crawl_run_id, event_time=event_time)
 
             # Step 3 (Decoupled): Update crawl_runs metrics OUTSIDE listing transaction
             if update_crawl_run and crawl_run_id:
                 async with conn.cursor() as cur:
                     update_run_query = """
                         UPDATE crawl_runs SET
-                            items_processed = LEAST(items_scraped, items_processed + 1),
+                            items_processed = items_processed + 1,
                             new_listings_count = new_listings_count + %s,
                             price_changes_detected = price_changes_detected + %s
                         WHERE crawl_run_id = %s;
@@ -310,8 +320,11 @@ class PgListingRepository(ListingRepository):
         async with self.pool.connection() as conn:
             async with conn.transaction():
                 async with conn.cursor(row_factory=dict_row) as cur:
-                    for orig_idx, (item, crawl_run_id) in indexed_batch:
-                        res = await self._ingest_item_with_cursor(cur, item, crawl_run_id)
+                    for orig_idx, entry in indexed_batch:
+                        item = entry[0]
+                        crawl_run_id = entry[1]
+                        event_time = entry[2] if len(entry) > 2 else None
+                        res = await self._ingest_item_with_cursor(cur, item, crawl_run_id, event_time=event_time)
                         results_by_index[orig_idx] = res
 
         return [r for r in results_by_index if r is not None]
@@ -329,7 +342,7 @@ class PgListingRepository(ListingRepository):
             return
         query = """
             UPDATE crawl_runs SET
-                items_processed = LEAST(items_scraped, items_processed + %s),
+                items_processed = items_processed + %s,
                 new_listings_count = new_listings_count + %s,
                 price_changes_detected = price_changes_detected + %s
             WHERE crawl_run_id = %s;

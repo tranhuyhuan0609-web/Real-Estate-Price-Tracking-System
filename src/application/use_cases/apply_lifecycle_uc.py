@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 from src.application.interfaces.lifecycle_repository import LifecycleRepository
-
-if TYPE_CHECKING:
-    from psycopg_pool import AsyncConnectionPool
 
 logger = logging.getLogger(__name__)
 
@@ -21,20 +18,13 @@ class ApplyLifecycleUseCase:
 
     def __init__(
         self,
-        repo_or_pool: Union[LifecycleRepository, "AsyncConnectionPool", Any, None] = None,
+        repo: LifecycleRepository,
         *,
-        pool: Optional["AsyncConnectionPool"] = None,
-        repo: Optional[LifecycleRepository] = None,
         default_max_missing_count: int = DEFAULT_MAX_MISSING_COUNT,
     ) -> None:
-        target = repo if repo is not None else (repo_or_pool if repo_or_pool is not None else pool)
-        if target is None:
-            raise ValueError("Either 'repo' or 'pool' must be provided to ApplyLifecycleUseCase.")
-        if hasattr(target, "connection"):
-            from src.infrastructure.database.pg_lifecycle_repo import PgLifecycleRepository
-            self.repo: LifecycleRepository = PgLifecycleRepository(target)
-        else:
-            self.repo = target
+        if repo is None:
+            raise ValueError("A LifecycleRepository instance must be provided to ApplyLifecycleUseCase.")
+        self.repo: LifecycleRepository = repo
         self.default_max_missing_count = default_max_missing_count
 
     async def wait_for_ingestion(

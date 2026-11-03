@@ -23,3 +23,7 @@ class StoreBronzeUseCase:
         count = await self.bronze_repo.bulk_upsert_raw_events(events)
         logger.info("Bronze layer processed batch of %d events successfully.", len(events))
         return count
+
+    async def process_event(self, event: RawEventMessage) -> None:
+        """Process a single event into Bronze layer."""
+        await self.bronze_repo.bulk_upsert_raw_events([event])

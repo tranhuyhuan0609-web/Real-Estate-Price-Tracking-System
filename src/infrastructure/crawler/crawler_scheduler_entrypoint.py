@@ -35,6 +35,8 @@ from src.domain.entities import RunMode
 from src.infrastructure.config.main import load_settings
 from src.infrastructure.database.postgres_config_repository import PostgresConfigRepository
 from src.infrastructure.database.postgres_crawl_run_repository import PostgresCrawlRunRepository
+from src.infrastructure.database.pg_lifecycle_repo import PgLifecycleRepository
+from src.infrastructure.crawler.spider_factory import create_spider
 from src.infrastructure.kafka.producer import AioKafkaEventPublisher
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -171,7 +173,7 @@ class CrawlerSchedulerService:
 
             if pool is not None and run_id:
                 try:
-                    lifecycle_uc = ApplyLifecycleUseCase(pool)
+                    lifecycle_uc = ApplyLifecycleUseCase(repo=PgLifecycleRepository(pool))
                     if mode == RunMode.FULL_SWEEP:
                         logger.info("Triggering automated lifecycle & view refresh for FULL_SWEEP run '%s'...", run_id)
                         # Let the Silver/Gold consumers drain this run's backlog first, otherwise
@@ -224,6 +226,7 @@ class CrawlerSchedulerService:
                 crawl_run_repo=crawl_run_repo,
                 event_publisher=event_publisher,
                 kafka_topic=self.settings.KAFKA_RAW_TOPIC,
+                spider_factory=create_spider,
             )
 
             background_tasks: Set[asyncio.Task] = set()

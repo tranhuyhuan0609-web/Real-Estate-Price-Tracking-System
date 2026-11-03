@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from src.infrastructure.crawler.phone_revealer import PhoneRevealer, clean_phone_number
 from src.application.use_cases.reveal_phone_uc import RevealPhoneUseCase
+from src.infrastructure.database.pg_phone_repo import PgPhoneListingRepository
 
 
 def test_clean_phone_number_formats():
@@ -98,7 +99,7 @@ async def test_reveal_phone_use_case_success():
     mock_revealer = AsyncMock()
     mock_revealer.reveal_phone.return_value = "0917485869"
 
-    use_case = RevealPhoneUseCase(pool=mock_pool, revealer=mock_revealer)
+    use_case = RevealPhoneUseCase(repo=PgPhoneListingRepository(mock_pool), revealer=mock_revealer)
     result = await use_case.execute("mogi_12345")
 
     assert result["listing_key"] == "mogi_12345"
@@ -131,7 +132,7 @@ async def test_reveal_phone_use_case_creates_advertiser_if_missing():
     mock_revealer = AsyncMock()
     mock_revealer.reveal_phone.return_value = "0917485869"
 
-    use_case = RevealPhoneUseCase(pool=mock_pool, revealer=mock_revealer)
+    use_case = RevealPhoneUseCase(repo=PgPhoneListingRepository(mock_pool), revealer=mock_revealer)
     result = await use_case.execute("mogi_12345")
 
     assert result["listing_key"] == "mogi_12345"

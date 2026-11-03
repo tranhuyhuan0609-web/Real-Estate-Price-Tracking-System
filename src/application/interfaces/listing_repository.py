@@ -1,7 +1,8 @@
 """Listing repository interface for Silver and Gold persistence."""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
+from datetime import datetime
+from typing import Any, List, Optional, Tuple
 from src.domain.entities import ParsedListingItem
 
 
@@ -14,6 +15,7 @@ class ListingRepository(ABC):
         item: ParsedListingItem,
         crawl_run_id: str,
         update_crawl_run: bool = True,
+        event_time: Optional[datetime] = None,
     ) -> Tuple[bool, bool]:
         """Ingest a parsed listing into relational silver & gold layers.
 
@@ -25,7 +27,7 @@ class ListingRepository(ABC):
     @abstractmethod
     async def ingest_batch_transactional(
         self,
-        batch: List[Tuple[ParsedListingItem, str]],
+        batch: List[Tuple[Any, ...]],
     ) -> List[Tuple[bool, bool]]:
         """Ingest a batch of parsed listings atomically within a single transaction.
 
@@ -45,4 +47,3 @@ class ListingRepository(ABC):
     ) -> None:
         """Batch update crawl run metrics."""
         pass
-

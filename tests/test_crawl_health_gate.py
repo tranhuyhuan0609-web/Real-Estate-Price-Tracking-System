@@ -12,6 +12,7 @@ from src.domain.entities import Category, ListingDetailsData, ParsedListingItem,
 from src.infrastructure.database.config_mapping import row_to_config
 from src.infrastructure.kafka.producer import AioKafkaEventPublisher
 from tests.test_lifecycle_uc import make_mock_pool
+from src.infrastructure.database.pg_lifecycle_repo import PgLifecycleRepository
 
 
 class FlaggedSpider:
@@ -104,7 +105,7 @@ async def test_lifecycle_skips_unhealthy_run(status, items_scraped):
         "lifecycle_applied_at": None,
         "items_scraped": items_scraped,
     }
-    uc = ApplyLifecycleUseCase(pool=make_mock_pool(mock_cursor))
+    uc = ApplyLifecycleUseCase(repo=PgLifecycleRepository(make_mock_pool(mock_cursor)))
     result = await uc.execute("run_x")
 
     assert result == {"incremented": 0, "expired": 0}
@@ -115,7 +116,7 @@ async def test_lifecycle_skips_unhealthy_run(status, items_scraped):
 async def test_wait_for_ingestion_returns_true_when_all_processed():
     mock_cursor = AsyncMock()
     mock_cursor.fetchone.return_value = (100, 100)
-    uc = ApplyLifecycleUseCase(pool=make_mock_pool(mock_cursor))
+    uc = ApplyLifecycleUseCase(repo=PgLifecycleRepository(make_mock_pool(mock_cursor)))
     assert await uc.wait_for_ingestion("run_x", poll_sec=0.01) is True
 
 
@@ -123,7 +124,7 @@ async def test_wait_for_ingestion_returns_true_when_all_processed():
 async def test_wait_for_ingestion_rejects_stalled_low_progress():
     mock_cursor = AsyncMock()
     mock_cursor.fetchone.return_value = (100, 10)
-    uc = ApplyLifecycleUseCase(pool=make_mock_pool(mock_cursor))
+    uc = ApplyLifecycleUseCase(repo=PgLifecycleRepository(make_mock_pool(mock_cursor)))
     assert await uc.wait_for_ingestion("run_x", idle_sec=0.05, poll_sec=0.01) is False
 
 

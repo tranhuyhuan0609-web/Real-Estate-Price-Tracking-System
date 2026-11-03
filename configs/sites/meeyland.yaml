@@ -1,0 +1,100 @@
+site_id: meeyland
+name: Meeyland - Mua bán BĐS
+enabled: true
+crawler_type: rest_api
+schedule_times:
+- 05:00
+- '11:00'
+- '17:00'
+- '23:00'
+interval_seconds: null
+request:
+  url: https://api5.meeyland.com/v1/articles/search
+  method: POST
+  headers:
+    Accept: application/json, text/plain, */*
+    Accept-Language: vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7
+    Content-Type: application/json
+    Origin: https://meeyland.com
+    Referer: https://meeyland.com/mua-ban-nha-dat
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/128.0.0.0 Safari/537.36
+    X-Tenant: bWVleWxhbmQ=
+    sec-ch-ua-platform: '"Windows"'
+    sec-fetch-dest: empty
+    sec-fetch-mode: cors
+    sec-fetch-site: same-site
+  query_params: {}
+  body_template:
+    category: 5deb722db4367252525c1d00
+    sort: 2
+pagination:
+  strategy: page_number
+  param_location: body
+  page_param: page
+  limit_param: limit
+  start_page: 1
+  page_size: 20
+  max_pages_incremental: 10
+  max_pages_full_sweep: 1000
+  stop_when_empty_path: data.results
+rate_limit:
+  download_delay_sec: 1.5
+  concurrent_requests: 2
+  timeout_sec: 15
+  retry_times: 3
+response_mapping:
+  items_path: data.results
+  fields:
+    external_id: _id
+    external_code: code
+    title: title
+    description: description
+    price_vnd: totalPrice
+    area_m2: area
+    facade_m: facade
+    depth_m: depth
+    category: category.value
+    property_type: typeOfHouse.value
+    city_name: city.name
+    district_name: oldDistrict.translation[0].name
+    ward_name: ward.name
+    lng: ward.location.coordinates[0]
+    lat: ward.location.coordinates[1]
+    advertiser_id: createdBy._id
+    advertiser_name: contact.fullName
+    advertiser_phone: contact.phones[0]
+    advertiser_email: contact.email
+    advertiser_kind: userTypesLabel
+    advertiser_is_verified: createdBy.phoneVerified
+    published_at: publishedAt
+    url: url
+    thumbnail_url: thumbnailDisplay.url
+    media_list: media
+  value_mappings:
+    category:
+      mua_ban: sale
+      cho_thue: rent
+      du_an: project
+      _default: sale
+    property_type:
+      dat: land
+      dat_nen_du_an: land
+      nha_rieng: house
+      nha_mat_pho: house
+      chung_cu: apartment
+      can_ho_chung_cu: apartment
+      chung_cu_mini: apartment
+      biet_thu: villa
+      biet_thu_lien_ke: villa
+      shophouse: shophouse
+      shophouse_nha_pho_thuong_mai: shophouse
+      kho_nha_xuong: commercial
+      khach_san_nha_nghi: commercial
+      toa_nha_van_phong: commercial
+      khu_nghi_duong_resort: commercial
+      _default: other
+    advertiser_kind:
+      Môi giới: broker
+      Chính chủ: owner
+      _default: unknown

@@ -137,7 +137,13 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
 
     # 2. Compound price:
     # 2a. Tỷ + Triệu (e.g. "1 tỷ 250 triệu", "2 tỷ 100", "2 tỷ 5", "1 tỷ 25 triệu")
-    m_ty_tr = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:tỷ|ty|tỉ|ti)\s*([0-9]+(?:[\.,][0-9]+)?)\s*(triệu|trieu|tr)?\b", text)
+    # Negative lookahead ensures that an adjacent area (e.g. "3 tỷ 100 m2") is not mistakenly parsed as millions
+    m_ty_tr = re.search(
+        r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:tỷ|ty|tỉ|ti)\s*"
+        r"([0-9]+(?:[\.,][0-9]+)?)\b"
+        r"(?:(?!\s*(?:m[2²]|m\b|mét|ha|sào|phòng|căn|pn|wc)\b)\s*(triệu|trieu|tr)?)",
+        text,
+    )
     if m_ty_tr:
         ty = float(m_ty_tr.group(1).replace(",", "."))
         tr_raw = float(m_ty_tr.group(2).replace(",", "."))
@@ -158,7 +164,12 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
         return total, pm2
 
     # 2b. Triệu + Nghìn (e.g. "2 triệu 500 nghìn", "2 triệu 50 nghìn", "2 triệu 5")
-    m_tr_k = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:triệu|trieu|tr)\s*([0-9]+(?:[\.,][0-9]+)?)\s*(nghìn|ngan|k)?\b", text)
+    m_tr_k = re.search(
+        r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:triệu|trieu|tr)\s*"
+        r"([0-9]+(?:[\.,][0-9]+)?)\b"
+        r"(?:(?!\s*(?:m[2²]|m\b|mét|ha|sào|phòng|căn|pn|wc)\b)\s*(nghìn|ngan|k)?)",
+        text,
+    )
     if m_tr_k:
         tr = float(m_tr_k.group(1).replace(",", "."))
         k_raw = float(m_tr_k.group(2).replace(",", "."))
@@ -592,29 +603,36 @@ def safe_int(val: Any) -> Optional[int]:
 
 
 def extract_by_json_path(data: Any, path: str) -> Any:
-    """Extract nested value by dotted path supporting array indexes like 'a.b[0].c'."""
+    """Extract nested value by dotted path supporting array indexes like 'a.b[0].c'.
+    Also supports comma-separated fallback candidate paths: 'seller_info.full_name, full_name, account_name'.
+    """
     if not path or data is None:
         return None
 
-    tokens = re.findall(r"([a-zA-Z0-9_-]+)|\[(\d+)\]", path)
-    current = data
+    candidate_paths = [p.strip() for p in path.split(",") if p.strip()]
+    for candidate in candidate_paths:
+        tokens = re.findall(r"([a-zA-Z0-9_-]+)|\[(\d+)\]", candidate)
+        current = data
+        for prop, idx in tokens:
+            if current is None:
+                break
+            if prop:
+                if isinstance(current, dict):
+                    current = current.get(prop)
+                else:
+                    current = None
+                    break
+            elif idx:
+                index = int(idx)
+                if isinstance(current, list) and 0 <= index < len(current):
+                    current = current[index]
+                else:
+                    current = None
+                    break
+        if current is not None and current != "":
+            return current
 
-    for prop, idx in tokens:
-        if current is None:
-            return None
-        if prop:
-            if isinstance(current, dict):
-                current = current.get(prop)
-            else:
-                return None
-        elif idx:
-            index = int(idx)
-            if isinstance(current, list) and 0 <= index < len(current):
-                current = current[index]
-            else:
-                return None
-
-    return current
+    return None
 
 
 def extract_road_width(description: Optional[str]) -> Optional[float]:
@@ -926,20 +944,18 @@ class ListingParser:
                         parsed_email = cand
                         break
 
+        display_phone = parsed_phone[:20] if parsed_phone else None
+
         if parsed_phone:
             advertiser_id = f"adv_{self.config.site_id}_{parsed_phone[:20]}"
-            display_phone = parsed_phone[:20]
         elif adv_id:
             advertiser_id = str(adv_id).strip()[:64]
-            display_phone = None
         elif adv_name and str(adv_name).strip():
             adv_clean = str(adv_name).strip()
             name_hash = hashlib.md5(adv_clean.lower().encode("utf-8")).hexdigest()[:12]
             advertiser_id = f"adv_{self.config.site_id}_{name_hash}"
-            display_phone = None
         else:
             advertiser_id = None
-            display_phone = None
 
         advertiser = AdvertiserData(
             advertiser_id=advertiser_id,

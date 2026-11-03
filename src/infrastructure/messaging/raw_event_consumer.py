@@ -57,6 +57,30 @@ class RawEventConsumerService:
         logger.info("Shutdown signal received for Raw Event Consumer.")
         self.shutdown_event.set()
 
+    def _is_data_poison_pill(self, exc: BaseException) -> bool:
+        """Data poison pills: BSON error, document too large, encoding issues, ValueError, TypeError.
+        Transient errors: ServerSelectionTimeoutError, ConnectionFailure, NetworkTimeout.
+        """
+        try:
+            import pymongo.errors
+            import bson.errors
+            if isinstance(
+                exc,
+                (
+                    bson.errors.BSONError,
+                    pymongo.errors.DocumentTooLarge,
+                    ValueError,
+                    TypeError,
+                ),
+            ):
+                return True
+        except ImportError:
+            pass
+        name = exc.__class__.__name__
+        if any(token in name for token in ("BSON", "DocumentTooLarge", "ValidationError", "InvalidDocument")):
+            return True
+        return False
+
     async def _forward_to_dlq(self, dlq_publisher: AioKafkaEventPublisher, msg: Any, exc: Exception) -> bool:
         dlq_record = {
             "failed_at": datetime.now(timezone.utc).isoformat(),
@@ -133,7 +157,8 @@ class RawEventConsumerService:
                     else:
                         empty_polls = 0
 
-                    batch_events: List[RawEventMessage] = []
+                    valid_events: List[RawEventMessage] = []
+                    valid_msgs: List[Any] = []
                     dlq_forwarded = 0
                     dlq_failed: List[Any] = []
 
@@ -141,7 +166,8 @@ class RawEventConsumerService:
                         for msg in messages:
                             try:
                                 event = RawEventMessage.model_validate(msg.value)
-                                batch_events.append(event)
+                                valid_events.append(event)
+                                valid_msgs.append(msg)
                             except Exception as exc:
                                 logger.error("Invalid RawEventMessage at offset %d: %s. Forwarding to DLQ...", msg.offset, exc)
                                 if await self._forward_to_dlq(dlq_publisher, msg, exc) is False:
@@ -149,25 +175,38 @@ class RawEventConsumerService:
                                 else:
                                     dlq_forwarded += 1
 
-                    if batch_events:
+                    ingested_in_batch = 0
+                    if valid_events:
                         try:
-                            await use_case.process_batch(batch_events)
-                            total_ingested += len(batch_events)
+                            await use_case.process_batch(valid_events)
+                            ingested_in_batch = len(valid_events)
+                            total_ingested += ingested_in_batch
                         except Exception as storage_err:
-                            logger.error(
-                                "Failed to process Bronze batch into MongoDB: %s. Rewinding offset to retry...",
+                            logger.warning(
+                                "Failed to process Bronze batch (%s). Falling back to sequential execution...",
                                 storage_err,
                             )
-                            # Rewind consumer to earliest offset of this poll batch so nothing is lost
-                            earliest_rewind: Dict[Tuple[str, int], int] = {}
-                            for tp, messages in records.items():
-                                for msg in messages:
-                                    k = (msg.topic, msg.partition)
-                                    earliest_rewind[k] = min(msg.offset, earliest_rewind.get(k, msg.offset))
-                            for (topic, partition), offset in earliest_rewind.items():
-                                consumer.seek(TopicPartition(topic, partition), offset)
-                            await asyncio.sleep(1.0)
-                            continue
+                            for event, msg in zip(valid_events, valid_msgs):
+                                try:
+                                    await use_case.process_event(event)
+                                    ingested_in_batch += 1
+                                    total_ingested += 1
+                                except Exception as item_err:
+                                    if self._is_data_poison_pill(item_err):
+                                        logger.error(
+                                            "Data poison pill in Bronze for '%s': %s. Forwarding to DLQ...",
+                                            event.listing_key, item_err,
+                                        )
+                                        if await self._forward_to_dlq(dlq_publisher, msg, item_err) is False:
+                                            dlq_failed.append(msg)
+                                        else:
+                                            dlq_forwarded += 1
+                                    else:
+                                        logger.warning(
+                                            "Transient error storing '%s' to Bronze: %s. Rewinding for retry...",
+                                            event.listing_key, item_err,
+                                        )
+                                        dlq_failed.append(msg)
 
                     if dlq_failed:
                         # Never commit past a message that failed both Bronze storage and DLQ
@@ -179,9 +218,9 @@ class RawEventConsumerService:
                             consumer.seek(TopicPartition(topic, partition), offset)
                         logger.error("%d message(s) could not be stored in Bronze nor sent to DLQ; rewound for retry.", len(dlq_failed))
                         await asyncio.sleep(1.0)
-                    elif len(batch_events) + dlq_forwarded > 0:
+                    elif ingested_in_batch + dlq_forwarded > 0:
                         await consumer.commit()
-                        logger.info("Committed batch (%d bronze events, %d to DLQ) (total: %d).", len(batch_events), dlq_forwarded, total_ingested)
+                        logger.info("Committed batch (%d bronze events, %d to DLQ) (total: %d).", ingested_in_batch, dlq_forwarded, total_ingested)
 
                 except asyncio.CancelledError:
                     break
@@ -226,4 +265,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

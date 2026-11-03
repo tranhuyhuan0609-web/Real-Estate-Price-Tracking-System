@@ -1,37 +1,18 @@
-name: CI
+name: CI Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 jobs:
-  test:
+  lint-and-typecheck:
+    name: Lint & Mypy
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgis/postgis:16-3.4
-        env:
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: test_db
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      mongodb:
-        image: mongo:7.0
-        ports:
-          - 27017:27017
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -39,30 +20,37 @@ jobs:
           python-version: "3.13"
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov flake8 ruff mypy
+          pip install ruff mypy pyyaml pytest pytest-asyncio
 
-      - name: Lint and Format check
+      - name: Run Ruff Linting
+        run: ruff check src/ tests/
+
+      - name: Run Mypy Type Check
+        run: mypy src/realestate/domain src/realestate/application
+
+  tests:
+    name: Unit & Contract Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Dependencies
         run: |
-          ruff check . --ignore E501
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pyyaml pytest-cov
 
-      - name: Run Pytest Suite
-        env:
-          ENV: test
-          POSTGRES_HOST: 127.0.0.1
-          POSTGRES_PORT: 5432
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: test_db
-          MONGO_HOST: 127.0.0.1
-          MONGO_PORT: 27017
-          MONGO_USER: ""
-          MONGO_PASSWORD: ""
-          MONGO_DB: test_raw
-          KAFKA_BOOTSTRAP_SERVERS: 127.0.0.1:9092
+      - name: Run Pytest with Coverage
         run: |
-          pytest --maxfail=5 --disable-warnings
-
+          pytest tests/ --cov=src --cov-report=term-missing

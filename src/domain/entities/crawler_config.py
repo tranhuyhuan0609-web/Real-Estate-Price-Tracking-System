@@ -80,10 +80,14 @@ def normalize_host(host: str | None) -> str:
 
 
 def _validate_path(value: str, name: str) -> str:
-    if not JSON_PATH_RE.fullmatch(value):
-        raise ValueError(
-            f"{name} {value!r} is not a valid path (e.g. 'data.items' or 'a.b[0].c')."
-        )
+    parts = [p.strip() for p in value.split(",") if p.strip()]
+    if not parts:
+        raise ValueError(f"{name} must not be empty.")
+    for p in parts:
+        if not JSON_PATH_RE.fullmatch(p):
+            raise ValueError(
+                f"{name} {value!r} contains invalid path {p!r} (e.g. 'data.items' or 'a.b[0].c')."
+            )
     return value
 
 
@@ -287,7 +291,7 @@ class CrawlerConfig(StrictBaseModel):
             "override interval_seconds."
         ),
     )
-    interval_seconds: int = Field(default=300, ge=60)
+    interval_seconds: int | None = Field(default=None, ge=60)
 
     request: RequestSettings
     pagination: PaginationSettings = Field(default_factory=PaginationSettings)
@@ -368,6 +372,15 @@ class CrawlerConfig(StrictBaseModel):
         return normalized
 
     @model_validator(mode="after")
+    def validate_schedule_or_interval(self) -> CrawlerConfig:
+        if self.interval_seconds is None and not self.schedule_times:
+            raise ValueError(
+                "Crawler config must specify either interval_seconds (>= 60) "
+                "or at least one entry in schedule_times."
+            )
+        return self
+
+    @model_validator(mode="after")
     def validate_pagination_location(self) -> CrawlerConfig:
         if (
             self.pagination.param_location == "body"
@@ -387,7 +400,7 @@ class CrawlerConfig(StrictBaseModel):
         return self
 
     @property
-    def schedule_interval_seconds(self) -> int:
+    def schedule_interval_seconds(self) -> int | None:
         """Alias kept for the scheduler."""
         return self.interval_seconds
 

@@ -1,0 +1,55 @@
+site_id: cafeland_project
+name: Cafeland - Dự án BĐS
+enabled: true
+crawler_type: html
+schedule_times:
+- 02:00
+- 08:00
+- '14:00'
+- '20:00'
+interval_seconds: null
+request:
+  url: https://nhadat.cafeland.vn/du-an/page-{page}/
+  method: GET
+  headers:
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/128.0.0.0 Safari/537.36
+  query_params:
+    sort: tin-moi-nhat
+pagination:
+  strategy: page_number
+  page_param: page
+  start_page: 1
+  page_size: 20
+  max_pages_incremental: 10
+  max_pages_full_sweep: 300
+rate_limit:
+  download_delay_sec: 0.5
+  timeout_sec: 15.0
+  retry_times: 3
+response_mapping:
+  items_path: div.row-item
+  fields:
+    external_id: div.reales-title a::attr(href)
+    url: div.reales-title a::attr(href)
+    title: div.reales-title a::text
+    price_vnd: span.reales-price::text
+    area_m2: span.reales-area::text
+    city_name: div.info-location *::text
+    thumbnail_url: div.images-reales img::attr(data-src)
+    advertiser_name: a.member-name::text
+    published_at: .reals-update-time::attr(data-time), .reals-update-time *::text,
+      span.created-date::text, .date-create::text
+detail_page:
+  enabled: true
+  url_field: url
+  fields:
+    advertiser_phone: a#detailTelSpanZalo::attr(href), a[title*="Liên hệ"]::attr(href),
+      a[href*="zalo.me/"]::attr(href), a[href^="tel:"]::attr(href)
+    advertiser_email: span.__cf_email__::attr(data-cfemail), a[href^="mailto:"]::attr(href),
+      img.avatar::attr(src), .user-avatar img::attr(src)
+    description: div.blk-content *::text, .content-detail *::text, div.blk-content::text,
+      .content-detail::text
+    media_list: div.photo-list img::attr(src), .gallery img::attr(src)
+    breadcrumb: .breadcrumb *::text
