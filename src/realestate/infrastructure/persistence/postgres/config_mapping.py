@@ -1,11 +1,12 @@
 from __future__ import annotations
+
 from collections.abc import Mapping
 from typing import Any
 
 from pydantic import ValidationError
 
-from realestate.domain.exceptions import ConfigCorruptedError
 from realestate.domain.entities.crawler_config import CrawlerConfig
+from realestate.domain.exceptions import ConfigCorruptedError
 
 # Stored as real columns of crawler_configs; everything else is config_json.
 COLUMN_FIELDS = (

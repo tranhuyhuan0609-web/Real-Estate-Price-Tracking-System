@@ -1,6 +1,11 @@
+"""Road / alley width extraction from listing descriptions."""
+
 from __future__ import annotations
+
 import re
 from typing import Optional
+
+from realestate.infrastructure.crawler.parsing.numbers import safe_float
 
 ROAD_WIDTH_PATTERNS = [
     re.compile(
@@ -20,6 +25,7 @@ ROAD_WIDTH_PATTERNS = [
     ),
 ]
 
+
 def extract_road_width(description: Optional[str]) -> Optional[float]:
     """Extract road/alley width in meters using regex."""
     if not description:
@@ -27,10 +33,7 @@ def extract_road_width(description: Optional[str]) -> Optional[float]:
     for pattern in ROAD_WIDTH_PATTERNS:
         match = pattern.search(description)
         if match:
-            try:
-                val = float(match.group(1).replace(",", "."))
-                if 1.0 <= val <= 100.0:
-                    return round(val, 2)
-            except ValueError:
-                pass
+            val = safe_float(match.group(1))
+            if val is not None and 1.0 <= val <= 100.0:
+                return round(val, 2)
     return None

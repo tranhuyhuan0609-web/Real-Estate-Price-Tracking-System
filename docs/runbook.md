@@ -4,7 +4,7 @@
 
 ### Prerequisites
 - Docker Engine >= 24.0 and Docker Compose v2
-- Python >= 3.11 (Python 3.13 recommended)
+- uv (installs Python 3.13 from `.python-version`)
 
 ### Starting Services
 ```bash
@@ -16,7 +16,7 @@ make up
 # or: docker compose -f docker/docker-compose.yml up -d --build
 
 # 3. Check container status
-docker compose ps
+make ps
 ```
 
 ---
@@ -26,27 +26,31 @@ docker compose ps
 ### Triggering Manual Crawl via CLI
 ```bash
 # Incremental crawl (latest listings only)
-python -m realestate.entrypoints.cli crawl --site meeyland --mode incremental
+uv run realestate crawl --site meeyland --mode incremental
 
 # Full sweep crawl (entire catalogue for lifecycle expiry check)
-python -m realestate.entrypoints.cli crawl --site nhatot --mode full_sweep
+uv run realestate crawl --site nhatot --mode full_sweep
 ```
 
 ### Adding or Updating a Site Config
-Site configurations are stored in YAML files under `configs/sites/<site_id>.yaml`.
-To adjust pagination budget, schedule times, or response mappings:
-1. Edit or create `configs/sites/<site_id>.yaml`.
-2. Run config validation test:
+`configs/sites/<site_id>.yaml` is the source of truth (ADR 0004). The scheduler reads the
+`crawler_configs` table, so YAML changes take effect only after a sync:
+1. Edit or create `configs/sites/<site_id>.yaml` (the file name must equal `site_id`).
+2. Validate: `make test` (or `uv run pytest tests/contract/test_site_configs.py`).
+3. Preview, then apply:
    ```bash
-   pytest tests/contract/test_site_configs.py
+   uv run realestate sync-configs --dry-run
+   make sync-configs            # or: make up  (the config-sync job runs before the scheduler)
    ```
-3. The scheduler picks up changes on the next poll cycle or container reload.
+   The scheduler sees the new row on its next poll (15 s). To disable a site for good, set
+   `enabled: false` in YAML. A manual SQL toggle lasts only until the next sync.
 
 ---
 
 ## 3. Dead Letter Queue (DLQ) & Replay
 
-When unparseable records or schema discrepancies occur, messages are safely routed to `dlq_events` in MongoDB.
+Bronze and Silver/Gold workers publish records they cannot process to the Kafka topic
+`realestate.dlq_events`. The `dlq-worker` container archives that topic into MongoDB `dlq_events`.
 
 ### Inspecting DLQ Records
 Connect to MongoDB:
@@ -62,10 +66,13 @@ db.dlq_events.find().sort({ failed_at: -1 }).limit(5)
 Once parser bug or schema is fixed:
 ```bash
 # Replay 50 messages for a specific site
-python -m realestate.entrypoints.cli replay-dlq --site-id meeyland --limit 50
+uv run realestate replay-dlq --site-id meeyland --limit 50
 
-# Replay all DLQ messages from MongoDB
-python -m realestate.entrypoints.cli replay-dlq --limit 500
+# Replay all DLQ messages from MongoDB, deleting the ones that were re-published
+uv run realestate replay-dlq --limit 500 --delete
+
+# Replay straight from the Kafka DLQ topic (e.g. if dlq-worker was down)
+uv run realestate replay-dlq --source kafka --limit 500
 ```
 
 ---
@@ -80,3 +87,16 @@ During a `full_sweep` run:
    - When `missing_count >= 3`, listings are automatically marked as `expired`.
 4. Analytical materialized views are refreshed concurrently (`REFRESH MATERIALIZED VIEW CONCURRENTLY`).
 
+
+---
+
+## 5. Schema Changes & Resetting Data
+
+- `sql/init.sql` runs **only** when the Postgres volume is empty. Ship later schema changes as
+  Alembic revisions in `migrations/versions/` and apply them with `make migrate`. On a database
+  created by `init.sql`, the first `make migrate` re-applies the idempotent baseline `001` and stamps it.
+- `tests/contract/test_sql_schema.py` fails if `init.sql` and the `001` baseline drift apart.
+- Wipe ingested data, keeping configs and crawl history:
+  ```bash
+  uv run realestate reset --confirm
+  ```

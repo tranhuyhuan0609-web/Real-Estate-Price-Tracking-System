@@ -1,4 +1,7 @@
+"""Legal status (sổ đỏ/hồng, HĐMB, ...) extraction."""
+
 from __future__ import annotations
+
 import re
 from typing import Optional
 
@@ -10,6 +13,7 @@ LEGAL_STATUS_PATTERNS = [
     (re.compile(r"(?:chờ\s*sổ|đang\s*chờ\s*cấp\s*sổ)", re.IGNORECASE), "Chờ cấp sổ"),
     (re.compile(r"(?:giấy\s*(?:tờ\s*)?tay|vi\s*bằng)", re.IGNORECASE), "Giấy viết tay/Vi bằng"),
 ]
+
 
 def extract_legal_status(description: Optional[str]) -> Optional[str]:
     """Extract legal status from description using keyword patterns."""

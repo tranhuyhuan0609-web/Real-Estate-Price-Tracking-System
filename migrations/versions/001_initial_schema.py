@@ -1,13 +1,13 @@
 """001_initial_schema
 
 Revision ID: 001_initial
-Revises: 
+Revises:
 Create Date: 2026-11-03 16:00:00.000000
 
 """
 from typing import Sequence, Union
+
 from alembic import op
-import sqlalchemy as sa
 
 revision: str = '001_initial'
 down_revision: Union[str, None] = None
@@ -174,7 +174,7 @@ def upgrade() -> None:
     # 7. Views
     op.execute("""
     CREATE MATERIALIZED VIEW IF NOT EXISTS mv_ward_avg_price_per_m2 AS
-    SELECT 
+    SELECT
         d.city_name,
         d.district_name,
         COALESCE(d.ward_name, '') AS ward_name,
@@ -188,21 +188,21 @@ def upgrade() -> None:
         NOW() AS refreshed_at
     FROM listings l
     JOIN listing_details d ON l.listing_key = d.listing_key
-    WHERE l.status = 'active' 
+    WHERE l.status = 'active'
       AND l.current_price_per_m2 BETWEEN 1000000 AND 2000000000
       AND d.city_name IS NOT NULL
-    GROUP BY 
+    GROUP BY
         d.city_name,
         d.district_name,
         COALESCE(d.ward_name, ''),
         l.category,
         l.property_type;
 
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_ward_avg_price 
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_ward_avg_price
     ON mv_ward_avg_price_per_m2(city_name, district_name, ward_name, category, property_type);
 
     CREATE MATERIALIZED VIEW IF NOT EXISTS mv_steep_price_drops_7d AS
-    SELECT 
+    SELECT
         h.history_id,
         h.listing_key,
         l.source,

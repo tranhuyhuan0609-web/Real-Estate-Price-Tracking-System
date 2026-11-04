@@ -1,13 +1,16 @@
 from __future__ import annotations
+
 import re
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple
+
 from .administrative_data import (
     DISTRICT_PREFIXES,
-    WARD_PREFIXES,
-    STREET_PREFIXES,
     KNOWN_HCM_DISTRICTS,
+    STREET_PREFIXES,
+    WARD_PREFIXES,
     is_province_token,
 )
+
 
 def canonicalize_vietnamese_location(
     city: Optional[str] = None,
@@ -138,7 +141,7 @@ def parse_vietnamese_address(
             else:
                 district = district or parts.pop(0)
         elif len(parts) == 2:
-            p0, p1 = parts[0], parts[1]
+            p0 = parts[0]
             p0_lower = p0.lower()
             if not district:
                 district = parts.pop(1)

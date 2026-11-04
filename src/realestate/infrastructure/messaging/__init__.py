@@ -5,16 +5,15 @@ from realestate.infrastructure.messaging.dlq import (
     replay_from_kafka,
     replay_from_mongo,
 )
+from realestate.infrastructure.messaging.dlq_consumer import DLQEventConsumerService
 from realestate.infrastructure.messaging.producer import AioKafkaEventPublisher
 from realestate.infrastructure.messaging.raw_consumer import RawEventConsumerService
-
-CleanEventConsumerService = CleanEventProcessorService
 
 __all__ = [
     "AioKafkaEventPublisher",
     "BaseConsumer",
-    "CleanEventConsumerService",
     "CleanEventProcessorService",
+    "DLQEventConsumerService",
     "RawEventConsumerService",
     "forward_to_dlq",
     "replay_from_kafka",

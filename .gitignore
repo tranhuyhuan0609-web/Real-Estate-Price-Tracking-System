@@ -1,5 +1,22 @@
+# Secrets
 .env
-.vscode
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+
+# Tooling caches / reports
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Editors
+.vscode/
+.idea/

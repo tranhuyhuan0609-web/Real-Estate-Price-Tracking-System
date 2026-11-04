@@ -11,11 +11,6 @@ class ConfigAlreadyExistsError(Exception):
     pass
 
 
-class ConfigIdentityMismatchError(Exception):
-    """Raised when the configuration identity does not match."""
-    pass
-
-
 class ConfigCorruptedError(ValueError):
     """Raised when a stored crawler configuration is invalid or inconsistent."""
     pass

@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+
 from psycopg.rows import dict_row
+
 from realestate.application.ports.lifecycle_repository import LifecycleRepository
 
 if TYPE_CHECKING:

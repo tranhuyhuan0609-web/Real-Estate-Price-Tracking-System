@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 from typing import List, Optional
+
 from pymongo import AsyncMongoClient, UpdateOne
+
 from realestate.application.ports.bronze_repository import BronzeRepository
 from realestate.domain.entities import RawEventMessage
 

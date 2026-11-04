@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-import html
 import re
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
+
 from realestate.domain.entities import (
     AdvertiserData,
     AdvertiserKind,
@@ -17,645 +16,52 @@ from realestate.domain.entities import (
     PropertyType,
 )
 from realestate.domain.entities.crawler_config import CrawlerConfig
-from realestate.domain.services import generate_fingerprint, generate_listing_key, parse_vietnamese_address
-
-ROAD_WIDTH_PATTERNS = [
-    re.compile(
-        r"(?:đường|ngõ|mặt\s*ngõ|hẻm|lộ(?:\s*giới|\s*nhựa)?)"
-        r"(?:\s*(?:trước\s*(?:nhà|đất|mặt|cửa)|vào\s*(?:nhà|đất)))?"
-        r"(?:\s*rộng)?"
-        r"\s*[:=]?\s*([0-9]+(?:[\.,][0-9]+)?)\s*(?:m|mét)\b(?![2²])",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:m|mét)\b(?![2²])\s*(?:đường|ngõ|mặt\s*ngõ|hẻm|lộ|ô\s*tô)",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"ô\s*tô\s*(?:tránh|đỗ\s*cửa|vào\s*(?:nhà|đất))\s*[,.]?\s*(?:đường|ngõ|hẻm)?\s*([0-9]+(?:[\.,][0-9]+)?)\s*(?:m|mét)\b(?![2²])",
-        re.IGNORECASE,
-    ),
-]
-
-LEGAL_STATUS_PATTERNS = [
-    (re.compile(r"(?:sổ\s*đỏ\s*chính\s*chủ|sổ\s*hồng\s*chính\s*chủ)", re.IGNORECASE), "Sổ đỏ/hồng chính chủ"),
-    (re.compile(r"(?:sổ\s*đỏ|sổ\s*hồng|sổ\s*riêng|sổ\s*vuông\s*đẹp)", re.IGNORECASE), "Sổ đỏ/hồng"),
-    (re.compile(r"(?:hợp\s*đồng\s*mua\s*bán|hđmb)", re.IGNORECASE), "Hợp đồng mua bán"),
-    (re.compile(r"(?:giấy\s*tờ\s*hợp\s*lệ|pháp\s*lý\s*chuẩn)", re.IGNORECASE), "Pháp lý hợp lệ"),
-    (re.compile(r"(?:chờ\s*sổ|đang\s*chờ\s*cấp\s*sổ)", re.IGNORECASE), "Chờ cấp sổ"),
-    (re.compile(r"(?:giấy\s*(?:tờ\s*)?tay|vi\s*bằng)", re.IGNORECASE), "Giấy viết tay/Vi bằng"),
-]
-
-
-def clean_html(raw_html: Optional[str]) -> Optional[str]:
-    """Strip HTML tags, unescape entities, and normalize whitespace."""
-    if not raw_html:
-        return None
-    text = html.unescape(raw_html)
-    text = re.sub(r"<(?:p|div|br|li|h[1-6]|tr)[^>]*>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", " ", text)
-    lines = [re.sub(r"[ \t\r\f\v]+", " ", line).strip() for line in text.split("\n")]
-    cleaned = "\n".join(line for line in lines if line)
-    return cleaned if cleaned else None
-
-
-MAX_VALID_PRICE_VND = 5_000_000_000_000  # 5,000 tỷ VNĐ sanity threshold
-
-
-def _normalize_vietnamese_number_str(s: str) -> str:
-    """Normalize a Vietnamese numeric string with possible thousand/decimal separators.
-
-    Examples:
-        '1.200' -> '1200'
-        '1,596' -> '1596'
-        '1.200,5' -> '1200.5'
-        '1,200.5' -> '1200.5'
-        '85.5' -> '85.5'
-        '85,5' -> '85.5'
-    """
-    s = s.strip()
-    if "." in s and "," in s:
-        if s.rfind(",") > s.rfind("."):
-            s = s.replace(".", "").replace(",", ".")
-        else:
-            s = s.replace(",", "")
-    elif "." in s:
-        if re.search(r"^\d{1,3}(?:\.\d{3})+$", s):
-            s = s.replace(".", "")
-        elif re.search(r"\b\d{1,3}\.\d{3}(?!\d)", s):
-            s = re.sub(r"(?<=\d)\.(\d{3})(?!\d)", r"\1", s)
-    elif "," in s:
-        if re.search(r"^\d{1,3}(?:,\d{3})+$", s):
-            s = s.replace(",", "")
-        elif re.search(r"\b\d{1,3},(\d{3})(?!\d)", s):
-            s = re.sub(r"(?<=\d),(\d{3})(?!\d)", r"\1", s)
-        else:
-            s = s.replace(",", ".")
-    return s
-
-
-def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Optional[float], Optional[float]]:
-    """Parse real estate price from raw float, int or Vietnamese text (e.g. '5.2 tỷ', '850 triệu', '45 tr/m2').
-
-    Returns:
-        Tuple[Optional[float], Optional[float]]: (price_vnd, price_per_m2)
-    """
-    if raw is None:
-        return None, None
-    if isinstance(raw, (int, float)):
-        val = float(raw)
-        if val <= 0 or val > MAX_VALID_PRICE_VND:
-            return None, None
-        pm2 = round(val / area, 0) if area and area > 0 else None
-        return val, pm2
-
-    text = str(raw).strip().lower()
-    if not text or any(k in text for k in ["thỏa thuận", "thoa thuan", "liên hệ", "lien he", "tùy", "đang cập nhật"]):
-        return None, None
-    if re.match(r"^0+(?:[\.,]0+)?\s*(?:đ|d|đồng|dong|vnd|tỷ|triệu|tr)?$", text):
-        return None, None
-
-    # 1. Price per m2: e.g. "45 triệu/m2" or "45 tr/m2" or "1.5 tỷ/m2" or "48tr/m"
-    m_per_m2 = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(tỷ|ty|tỉ|ti|triệu|trieu|tr|nghìn|ngan|k)\s*/\s*(?:m[2²]|m\b)", text)
-    if m_per_m2:
-        num = float(m_per_m2.group(1).replace(",", "."))
-        unit = m_per_m2.group(2)
-        if any(c in unit for c in ["tỷ", "ty", "tỉ", "ti"]):
-            mult = 1_000_000_000
-        elif any(c in unit for c in ["triệu", "trieu", "tr"]):
-            mult = 1_000_000
-        else:
-            mult = 1_000
-        price_m2 = num * mult
-        price_vnd = round(price_m2 * area) if area and area > 0 else None
-        if price_vnd and price_vnd > MAX_VALID_PRICE_VND:
-            return None, None
-        return price_vnd, price_m2
-
-    # Clean rental suffixes e.g. '/tháng', '/th', '/năm'
-    text = re.sub(r"/\s*(?:tháng|thang|th|năm|nam)\b", "", text)
-
-    # 2. Compound price:
-    # 2a. Tỷ + Triệu (e.g. "1 tỷ 250 triệu", "2 tỷ 100", "2 tỷ 5", "1 tỷ 25 triệu")
-    # Negative lookahead ensures that an adjacent area (e.g. "3 tỷ 100 m2") is not mistakenly parsed as millions
-    m_ty_tr = re.search(
-        r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:tỷ|ty|tỉ|ti)\s*"
-        r"([0-9]+(?:[\.,][0-9]+)?)\b"
-        r"(?:(?!\s*(?:m[2²]|m\b|mét|ha|sào|phòng|căn|pn|wc)\b)\s*(triệu|trieu|tr)?)",
-        text,
-    )
-    if m_ty_tr:
-        ty = float(m_ty_tr.group(1).replace(",", "."))
-        tr_raw = float(m_ty_tr.group(2).replace(",", "."))
-        has_unit = bool(m_ty_tr.group(3))
-        if has_unit:
-            tr = tr_raw * 1_000_000
-        else:
-            if tr_raw < 10 and "." not in m_ty_tr.group(2):
-                tr = tr_raw * 100_000_000
-            elif tr_raw < 100 and "." not in m_ty_tr.group(2):
-                tr = tr_raw * 10_000_000
-            else:
-                tr = tr_raw * 1_000_000
-        total = ty * 1_000_000_000 + tr
-        if total > MAX_VALID_PRICE_VND:
-            return None, None
-        pm2 = round(total / area, 0) if area and area > 0 else None
-        return total, pm2
-
-    # 2b. Triệu + Nghìn (e.g. "2 triệu 500 nghìn", "2 triệu 50 nghìn", "2 triệu 5")
-    m_tr_k = re.search(
-        r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:triệu|trieu|tr)\s*"
-        r"([0-9]+(?:[\.,][0-9]+)?)\b"
-        r"(?:(?!\s*(?:m[2²]|m\b|mét|ha|sào|phòng|căn|pn|wc)\b)\s*(nghìn|ngan|k)?)",
-        text,
-    )
-    if m_tr_k:
-        tr = float(m_tr_k.group(1).replace(",", "."))
-        k_raw = float(m_tr_k.group(2).replace(",", "."))
-        has_unit = bool(m_tr_k.group(3))
-        if has_unit:
-            k = k_raw * 1_000
-        else:
-            if k_raw < 10 and "." not in m_tr_k.group(2):
-                k = k_raw * 100_000
-            elif k_raw < 100 and "." not in m_tr_k.group(2):
-                k = k_raw * 10_000
-            else:
-                k = k_raw * 1_000
-        total = tr * 1_000_000 + k
-        if total > MAX_VALID_PRICE_VND:
-            return None, None
-        pm2 = round(total / area, 0) if area and area > 0 else None
-        return total, pm2
-
-    # 3. Single unit: "5,2 tỷ", "850 triệu", "500 k"
-    m_single = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(tỷ|ty|tỉ|ti|triệu|trieu|tr|nghìn|ngan|k)\b", text)
-    if m_single:
-        num = float(m_single.group(1).replace(",", "."))
-        unit = m_single.group(2)
-        if unit in ("tỷ", "ty", "tỉ", "ti"):
-            total = num * 1_000_000_000
-        elif unit in ("triệu", "trieu", "tr"):
-            total = num * 1_000_000
-        else:
-            total = num * 1_000
-        if total > MAX_VALID_PRICE_VND:
-            return None, None
-        pm2 = round(total / area, 0) if area and area > 0 else None
-        return total, pm2
-
-    # 4. Pure digits: "2500000000"
-    clean_digits = re.sub(r"[^\d]", "", text)
-    if clean_digits and len(clean_digits) >= 6:
-        val = float(clean_digits)
-        if val > MAX_VALID_PRICE_VND:
-            return None, None
-        pm2 = round(val / area, 0) if area and area > 0 else None
-        return val, pm2
-
-    return None, None
-
-
-def parse_vietnamese_area(raw: Any) -> Optional[float]:
-    """Parse property area in m2 from float or text like '85.5 m2', '1.200 m2'.
-
-    Requires explicit area units (m2, m², mét vuông) or a purely numeric string
-    to avoid falsely extracting non-area numbers (e.g. frontage, bedroom count).
-    """
-    if raw is None:
-        return None
-    if isinstance(raw, (int, float)):
-        val = float(raw)
-        return val if 0 < val <= 5_000_000 else None
-    text = str(raw).strip().lower()
-    norm_text = _normalize_vietnamese_number_str(text)
-
-    # 1. Pure numeric string
-    if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", norm_text):
-        val = float(norm_text)
-        return val if 0 < val <= 5_000_000 else None
-    # 2. String containing explicit area unit (m2, m², m^2, mét vuông)
-    m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(?:m[2²]|m\^2|mét\s*vuông)\b", norm_text)
-    if m:
-        try:
-            val = float(m.group(1))
-            return val if 0 < val <= 5_000_000 else None
-        except ValueError:
-            pass
-    # Fallback search in raw text
-    m2 = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:m[2²]|m\^2|mét\s*vuông)\b", text)
-    if m2:
-        try:
-            val_str = _normalize_vietnamese_number_str(m2.group(1))
-            val = float(val_str)
-            return val if 0 < val <= 5_000_000 else None
-        except ValueError:
-            pass
-    return None
-
-
-def parse_vietnamese_phone(raw: Any) -> Optional[str]:
-    """Extract and normalize standard Vietnamese phone number (pure digits, starting with 0).
-
-    Strictly matches valid Vietnamese mobile (10 digits: 03, 05, 07, 08, 09)
-    or landline (10-11 digits starting with 02). Returns None if invalid.
-    """
-    if not raw:
-        return None
-    text = str(raw).strip()
-    text = re.sub(r"^(?:tel:|phone:|callto:)\s*", "", text, flags=re.IGNORECASE)
-
-    # First normalize pure digits
-    clean = re.sub(r"\D", "", text)
-    if clean.startswith("84"):
-        clean = "0" + clean[2:]
-    elif not clean.startswith("0") and len(clean) == 9 and clean[0] in "35789":
-        clean = "0" + clean
-
-    # Valid mobile numbers (10 digits: 03x, 05x, 07x, 08x, 09x)
-    if len(clean) == 10 and re.match(r"^0[35789]\d{8}$", clean):
-        return clean
-    # Valid landline numbers (10 or 11 digits: 02x)
-    if len(clean) in (10, 11) and re.match(r"^02\d{8,9}$", clean):
-        return clean
-
-    # Fallback to search inside URLs like /moi-gioi/0901234567 or zalo.me/0901234567
-    m = re.search(r"(?:/moi-gioi/|tel:|phone:|zalo\.me/)(?:\+?84|0)?([35789]\d{8})\b", text)
-    if m:
-        return "0" + m.group(1)
-
-    return None
-
-
-def extract_phone_from_text(text: Optional[str]) -> Optional[str]:
-    """Scan arbitrary text (title, description) for Vietnamese mobile phone numbers."""
-    if not text:
-        return None
-    # Strip parentheses and brackets that break phone token regex
-    cleaned = re.sub(r"[\(\)\[\]]", " ", str(text))
-    # Normalize common obfuscations: replace 'o' or 'O' with '0' in phone-like tokens
-    cleaned = re.sub(r"\b[oO](?=[35789])", "0", cleaned)
-    cleaned = re.sub(r"(\d)[oO](\d)", r"\g<1>0\g<2>", cleaned)
-    cleaned = re.sub(r"(\d)[oO]\b", r"\g<1>0", cleaned)
-    m = re.search(r"(?:\+?84|0)([35789](?:[.\s-]{0,2}\d){8})\b", cleaned)
-    if m:
-        digits = re.sub(r"\D", "", m.group(1))
-        if len(digits) == 9:
-            return "0" + digits
-    return None
-
-
-# Platform support and generic system domains/prefixes that must NEVER be assigned to listing advertisers
-PLATFORM_SUPPORT_DOMAINS = {
-    "homedy.com",
-    "mogi.vn",
-    "cafeland.vn",
-    "meeyland.com",
-    "meeygroup.com",
-    "chotot.vn",
-    "chotot.com",
-    "batdongsan.vn",
-    "batdongsan.com.vn",
-    "muaban.net",
-}
-
-PLATFORM_SUPPORT_PREFIXES = {
-    "lienhe",
-    "trogiup",
-    "info",
-    "contact",
-    "support",
-    "hotro",
-    "cskh",
-    "admin",
-    "noreply",
-    "no-reply",
-    "sale",
-    "sales",
-    "banhang",
-    "bientap",
-}
-
-
-def decode_cloudflare_email(cf_hex: Optional[str]) -> Optional[str]:
-    """Decode Cloudflare XOR-obfuscated email from data-cfemail hex attribute.
-
-    Cloudflare uses a 1-byte XOR cipher where the first 2 hex digits are the XOR key,
-    and each subsequent 2 hex digits represent one XOR-encoded character.
-    """
-    if not cf_hex or not isinstance(cf_hex, str):
-        return None
-    raw = cf_hex.strip()
-    if len(raw) < 6 or len(raw) % 2 != 0:
-        return None
-    try:
-        key = int(raw[:2], 16)
-        chars = [chr(int(raw[i:i + 2], 16) ^ key) for i in range(2, len(raw), 2)]
-        email = "".join(chars).strip().lower()
-        if re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
-            return email
-    except (ValueError, TypeError):
-        pass
-    return None
-
-
-def clean_email(raw_email: Optional[str]) -> Optional[str]:
-    """Normalize, unmask, and validate an email address.
-
-    Returns None if:
-    - The email is masked with asterisks or dots (e.g. 'abc***@gmail.com')
-    - The email is a platform support / generic portal email
-    - The string is not a valid RFC-compliant email address
-    """
-    if not raw_email:
-        return None
-
-    text = str(raw_email).strip()
-
-    # Reject masked emails immediately (containing '*' or '...') to avoid corrupting database
-    if "*" in text or "..." in text:
-        return None
-
-    # Check if this is a Cloudflare hex string (e.g. 4135332e2628...)
-    if re.fullmatch(r"^[0-9a-fA-F]{10,}$", text):
-        decoded = decode_cloudflare_email(text)
-        if decoded:
-            text = decoded
-
-    # Strip mailto: prefix and URL query parameters
-    text = re.sub(r"^mailto:\s*", "", text, flags=re.IGNORECASE)
-    text = text.split("?")[0].strip()
-
-    # Strip Homedy chat prefixes (chatpostinfo_..., pj_...)
-    text = re.sub(r"^(?:chatpostinfo_|pj_)", "", text, flags=re.IGNORECASE)
-
-    # Check for Cafeland/Mogi avatar filename containing email (e.g. /avatar/name@gmail.com-timestamp.jpg)
-    m_avatar = re.search(r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9]+(?:\.[a-zA-Z0-9]+)*\.(?:com\.vn|com|vn|net|org|edu|gov|io|info|biz|me))\b", text, re.IGNORECASE)
-    if m_avatar:
-        text = m_avatar.group(1)
-
-    text = text.strip().lower()
-
-    if "*" in text or "..." in text:
-        return None
-
-    # Validate email format
-    if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", text):
-        return None
-
-    # Filter out generic portal customer service emails
-    try:
-        user_part, domain_part = text.split("@", 1)
-        if domain_part in PLATFORM_SUPPORT_DOMAINS and user_part in PLATFORM_SUPPORT_PREFIXES:
-            return None
-    except ValueError:
-        return None
-
-    return text
-
-
-def extract_email_from_text(text: Optional[str]) -> Optional[str]:
-    """Scan arbitrary text (title, description, raw HTML) for valid, unmasked advertiser emails."""
-    if not text:
-        return None
-
-    # Find candidate emails in text
-    candidates = re.findall(r"\b([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)\b", str(text))
-    for cand in candidates:
-        cleaned = clean_email(cand)
-        if cleaned:
-            return cleaned
-    return None
-
-
-def parse_vietnamese_datetime(raw: Any) -> Optional[datetime]:
-    """Parse timestamps from ISO strings, UNIX epoch (sec/ms), or Vietnamese relative/absolute text."""
-    if not raw:
-        return None
-    if isinstance(raw, datetime):
-        return raw
-
-    # 1. Numeric UNIX timestamps
-    if isinstance(raw, (int, float)):
-        ts = float(raw)
-        if ts > 1e11:  # milliseconds
-            ts /= 1000.0
-        try:
-            return datetime.fromtimestamp(ts, tz=timezone.utc)
-        except (ValueError, OSError):
-            return None
-
-    text = str(raw).strip()
-    if text.isdigit() and len(text) in (10, 13):
-        ts = float(text)
-        if len(text) == 13:
-            ts /= 1000.0
-        try:
-            return datetime.fromtimestamp(ts, tz=timezone.utc)
-        except (ValueError, OSError):
-            return None
-
-    # 2. Vietnamese relative strings
-    now = datetime.now(timezone.utc)
-    text_lower = text.lower()
-
-    m_sec = re.search(r"(\d+)\s*(?:giây|giay|s)\s*trước", text_lower)
-    if m_sec:
-        return now - timedelta(seconds=int(m_sec.group(1)))
-
-    m_min = re.search(r"(\d+)\s*(?:phút|phut|p)\s*trước", text_lower)
-    if m_min:
-        return now - timedelta(minutes=int(m_min.group(1)))
-
-    m_hour = re.search(r"(\d+)\s*(?:giờ|gio|h)\s*trước", text_lower)
-    if m_hour:
-        return now - timedelta(hours=int(m_hour.group(1)))
-
-    m_day = re.search(r"(\d+)\s*(?:ngày|ngay)\s*trước", text_lower)
-    if m_day:
-        return now - timedelta(days=int(m_day.group(1)))
-
-    if "hôm nay" in text_lower or "hom nay" in text_lower:
-        m_time = re.search(r"(\d{1,2}):(\d{2})", text_lower)
-        if m_time:
-            h, mi = int(m_time.group(1)), int(m_time.group(2))
-            return now.replace(hour=h, minute=mi, second=0, microsecond=0)
-        return now
-
-    if "hôm qua" in text_lower or "hom qua" in text_lower:
-        m_time = re.search(r"(\d{1,2}):(\d{2})", text_lower)
-        yest = now - timedelta(days=1)
-        if m_time:
-            h, mi = int(m_time.group(1)), int(m_time.group(2))
-            return yest.replace(hour=h, minute=mi, second=0, microsecond=0)
-        return yest
-
-    # 3. Standard DD/MM/YYYY or DD-MM-YYYY
-    m_date = re.search(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?", text)
-    if m_date:
-        d, m, y = int(m_date.group(1)), int(m_date.group(2)), int(m_date.group(3))
-        h = int(m_date.group(4)) if m_date.group(4) else 0
-        mi = int(m_date.group(5)) if m_date.group(5) else 0
-        s = int(m_date.group(6)) if m_date.group(6) else 0
-        try:
-            return datetime(y, m, d, h, mi, s, tzinfo=timezone.utc)
-        except ValueError:
-            pass
-
-    # 4. ISO fallback
-    try:
-        clean_str = text.replace("Z", "+00:00")
-        return datetime.fromisoformat(clean_str)
-    except (ValueError, TypeError):
-        return None
-
-
-
-def extract_dimensions(text: Optional[str]) -> Tuple[Optional[float], Optional[float]]:
-    """Extract facade (mặt tiền / ngang) and depth (chiều sâu / dài) from text in meters.
-
-    Matches:
-        - Dimension multiplication: '5x20m', '5 x 20m', '4.5*18', '3,5 x 15', 'DT: 5x20'
-        - Explicit keyword patterns: 'mặt tiền 5m dài 20m', 'ngang 4.5m sâu 18m'
-
-    Returns:
-        Tuple[Optional[float], Optional[float]]: (facade_m, depth_m)
-    """
-    if not text:
-        return None, None
-
-    facade: Optional[float] = None
-    depth: Optional[float] = None
-
-    # 1. Explicit keyword matching
-    m_facade = re.search(
-        r"(?:mặt\s*tiền|ngang|bề\s*ngang)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:m|mét)?\b(?![2²])",
-        text,
-        re.IGNORECASE,
-    )
-    if m_facade:
-        try:
-            val = float(m_facade.group(1).replace(",", "."))
-            if 0 < val < 500:
-                facade = val
-        except ValueError:
-            pass
-
-    m_depth = re.search(
-        r"(?:chiều\s*dài|chiều\s*sâu|dài|sâu)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:m|mét)?\b(?![2²])",
-        text,
-        re.IGNORECASE,
-    )
-    if m_depth:
-        try:
-            val = float(m_depth.group(1).replace(",", "."))
-            if 0 < val < 1000:
-                depth = val
-        except ValueError:
-            pass
-
-    # 2. Multiplication format: e.g. "5x20m", "5 x 20m", "4.5*18", "3,5 x 15", "DT: 5x20"
-    if facade is None or depth is None:
-        m_mult = re.search(
-            r"(?:\b|dt|diện tích|kích thước|dt:)?\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:m|mét)?\s*[xX*×]\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:m|mét)?\b(?![2²])",
-            text,
-            re.IGNORECASE,
-        )
-        if m_mult:
-            try:
-                w = float(m_mult.group(1).replace(",", "."))
-                l = float(m_mult.group(2).replace(",", "."))
-                if 0 < w < 500 and 0 < l < 1000:
-                    if facade is None:
-                        facade = w
-                    if depth is None:
-                        depth = l
-            except ValueError:
-                pass
-
-    return facade, depth
-
-
-def safe_float(val: Any) -> Optional[float]:
-    """Safely convert a value to float without raising ValueError."""
-    if val is None:
-        return None
-    if isinstance(val, (int, float)):
-        return float(val)
-    try:
-        cleaned = str(val).strip().replace(",", ".")
-        return float(cleaned)
-    except (ValueError, TypeError):
-        return None
-
-
-def safe_int(val: Any) -> Optional[int]:
-    """Safely convert a value to int without raising ValueError."""
-    if val is None:
-        return None
-    if isinstance(val, int):
-        return val
-    try:
-        return int(float(str(val).strip()))
-    except (ValueError, TypeError):
-        return None
-
-
-def extract_by_json_path(data: Any, path: str) -> Any:
-    """Extract nested value by dotted path supporting array indexes like 'a.b[0].c'.
-    Also supports comma-separated fallback candidate paths: 'seller_info.full_name, full_name, account_name'.
-    """
-    if not path or data is None:
-        return None
-
-    candidate_paths = [p.strip() for p in path.split(",") if p.strip()]
-    for candidate in candidate_paths:
-        tokens = re.findall(r"([a-zA-Z0-9_-]+)|\[(\d+)\]", candidate)
-        current = data
-        for prop, idx in tokens:
-            if current is None:
-                break
-            if prop:
-                if isinstance(current, dict):
-                    current = current.get(prop)
-                else:
-                    current = None
-                    break
-            elif idx:
-                index = int(idx)
-                if isinstance(current, list) and 0 <= index < len(current):
-                    current = current[index]
-                else:
-                    current = None
-                    break
-        if current is not None and current != "":
-            return current
-
-    return None
-
-
-def extract_road_width(description: Optional[str]) -> Optional[float]:
-    """Extract road/alley width in meters using regex."""
-    if not description:
-        return None
-    for pattern in ROAD_WIDTH_PATTERNS:
-        match = pattern.search(description)
-        if match:
-            val = safe_float(match.group(1))
-            if val is not None and 1.0 <= val <= 100.0:
-                return round(val, 2)
-    return None
-
-
-def extract_legal_status(description: Optional[str]) -> Optional[str]:
-    """Extract legal status from description using keyword patterns."""
-    if not description:
-        return None
-    for pattern, label in LEGAL_STATUS_PATTERNS:
-        if pattern.search(description):
-            return label
-    return None
+from realestate.domain.services import (
+    generate_fingerprint,
+    generate_listing_key,
+    parse_vietnamese_address,
+)
+from realestate.infrastructure.crawler.parsing.area import (
+    extract_dimensions,  # noqa: F401  (re-exported)
+    parse_vietnamese_area,  # noqa: F401  (re-exported)
+)
+
+# Helpers live in sibling modules; re-exported here for existing importers.
+from realestate.infrastructure.crawler.parsing.datetime_parser import (  # noqa: F401
+    parse_vietnamese_datetime,
+)
+from realestate.infrastructure.crawler.parsing.html_cleaner import (
+    PLATFORM_SUPPORT_DOMAINS,  # noqa: F401  (re-exported)
+    PLATFORM_SUPPORT_PREFIXES,  # noqa: F401  (re-exported)
+    clean_email,  # noqa: F401  (re-exported)
+    clean_html,  # noqa: F401  (re-exported)
+    decode_cloudflare_email,  # noqa: F401  (re-exported)
+    extract_email_from_text,  # noqa: F401  (re-exported)
+)
+from realestate.infrastructure.crawler.parsing.json_path import (  # noqa: F401
+    extract_by_json_path,
+)
+from realestate.infrastructure.crawler.parsing.legal_status import (
+    LEGAL_STATUS_PATTERNS,  # noqa: F401  (re-exported)
+    extract_legal_status,  # noqa: F401  (re-exported)
+)
+from realestate.infrastructure.crawler.parsing.numbers import (
+    normalize_vietnamese_number_str,  # noqa: F401  (re-exported)
+    safe_float,  # noqa: F401  (re-exported)
+    safe_int,  # noqa: F401  (re-exported)
+)
+from realestate.infrastructure.crawler.parsing.phone import (
+    extract_phone_from_text,  # noqa: F401  (re-exported)
+    parse_vietnamese_phone,  # noqa: F401  (re-exported)
+)
+from realestate.infrastructure.crawler.parsing.price import (
+    MAX_VALID_PRICE_VND,  # noqa: F401  (re-exported)
+    parse_vietnamese_price,  # noqa: F401  (re-exported)
+)
+from realestate.infrastructure.crawler.parsing.road_width import (
+    ROAD_WIDTH_PATTERNS,  # noqa: F401  (re-exported)
+    extract_road_width,  # noqa: F401  (re-exported)
+)
 
 
 def infer_property_type(text: str) -> PropertyType:
@@ -802,6 +208,7 @@ class ListingParser:
             if depth_m is None:
                 depth_m = d_ext
 
+        legal_status: Optional[str]
         raw_legal = self._extract_val(raw_item, "legal_status")
         if raw_legal is not None and str(raw_legal).strip():
             legal_status = str(self._map_enum_value("legal_status", raw_legal, str(raw_legal).strip()))
@@ -869,7 +276,7 @@ class ListingParser:
             elif any(k in url_lower for k in ["dong-nai", "dongnai"]):
                 addr_parts["city_name"] = "Tỉnh Đồng Nai"
             elif addr_parts.get("district_name"):
-                dist_lower = addr_parts["district_name"].lower()
+                dist_lower = (addr_parts["district_name"] or "").lower()
                 hcm_districts = ["quận 1", "quận 2", "quận 3", "quận 4", "quận 5", "quận 6", "quận 7", "quận 8", "quận 9", "quận 10", "quận 11", "quận 12", "bình thạnh", "gò vấp", "tân bình", "tân phú", "phú nhuận", "bình tân", "thủ đức", "hóc môn", "củ chi", "bình chánh", "nhà bè", "cần giờ"]
                 hanoi_districts = ["ba đình", "hoàn kiếm", "tây hồ", "long biên", "cầu giấy", "đống đa", "hai bà trưng", "hoàng mai", "thanh xuân", "nam từ liêm", "bắc từ liêm", "hà đông", "sơn tây", "ba vì", "phúc thọ", "đan phượng", "hoài đức", "quốc oai", "thạch thất", "chương mỹ", "thanh oai", "thường tín", "phú xuyên", "ứng hòa", "mê linh", "đông anh", "gia lâm", "sóc sơn", "thanh trì"]
                 if any(d in dist_lower for d in hcm_districts):

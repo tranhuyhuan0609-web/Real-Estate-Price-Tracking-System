@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import List, Tuple
+
 from realestate.application.ports.listing_repository import ListingRepository
 from realestate.domain.entities.listing import RawEventMessage
 

@@ -1,4 +1,45 @@
+# Run from the repo root: `make up` (= docker compose --env-file .env -f docker/docker-compose.yml up -d --build)
+# Host ports: POSTGRES_PORT / MONGO_PORT from .env (so the host CLI and the published port agree),
+# KAFKA_HOST_PORT / KAFKA_UI_HOST_PORT are compose-only overrides.
+
+# Fixed project name: keeps the existing volumes (realestatepricetrackingsystem_postgres_data, ...)
+# from the time the compose file lived at the repo root.
+name: realestatepricetrackingsystem
+
+x-app: &app
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: realestate-tracker:local
+  restart: unless-stopped
+
+x-log-env: &log-env
+  CRAWLER_LOG_LEVEL: ${CRAWLER_LOG_LEVEL:-INFO}
+
+x-postgres-env: &postgres-env
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: ${POSTGRES_USER:-postgres_user}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_password}
+  POSTGRES_DB: ${POSTGRES_DB:-realestate_db}
+
+x-mongo-env: &mongo-env
+  MONGO_HOST: mongo
+  MONGO_PORT: "27017"
+  MONGO_USER: ${MONGO_USER:-mongo_user}
+  MONGO_PASSWORD: ${MONGO_PASSWORD:-mongo_secure_password}
+  MONGO_DB: ${MONGO_DB:-realestate_raw}
+
+x-kafka-env: &kafka-env
+  KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+  KAFKA_RAW_TOPIC: ${KAFKA_RAW_TOPIC:-realestate.raw_events}
+  KAFKA_DLQ_TOPIC: ${KAFKA_DLQ_TOPIC:-realestate.dlq_events}
+  KAFKA_GROUP_RAW_WRITER: ${KAFKA_GROUP_RAW_WRITER:-bds_bronze_mongo_group}
+  KAFKA_GROUP_CLEAN_PROCESSOR: ${KAFKA_GROUP_CLEAN_PROCESSOR:-bds_silver_gold_pg_group}
+  KAFKA_GROUP_DLQ_WRITER: ${KAFKA_GROUP_DLQ_WRITER:-bds_dlq_writer_group}
+
 services:
+  # ------------------------------------------------------------------ infrastructure
   kafka:
     image: apache/kafka:3.7.0
     restart: unless-stopped
@@ -37,7 +78,6 @@ services:
 
   kafka-setup:
     image: apache/kafka:3.7.0
-    container_name: kafka-setup-v1
     depends_on:
       kafka:
         condition: service_healthy
@@ -70,7 +110,7 @@ services:
     image: mongo:7.0
     restart: unless-stopped
     ports:
-      - 127.0.0.1:${MONGO_HOST_PORT:-16102}:27017
+      - 127.0.0.1:${MONGO_PORT:-16102}:27017
     deploy:
       resources:
         limits:
@@ -88,10 +128,11 @@ services:
       start_period: 15s
 
   postgres:
-    image: postgres:16-alpine
+    # sql/init.sql runs `CREATE EXTENSION postgis`, which the plain postgres image does not ship.
+    image: postgis/postgis:16-3.4-alpine
     restart: unless-stopped
     ports:
-      - 127.0.0.1:${POSTGRES_HOST_PORT:-16103}:5432
+      - 127.0.0.1:${POSTGRES_PORT:-16103}:5432
     deploy:
       resources:
         limits:
@@ -102,6 +143,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-realestate_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Runs only when the data volume is empty. Later schema changes ship as Alembic migrations.
       - ../sql/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
@@ -110,79 +152,69 @@ services:
       retries: 5
       start_period: 10s
 
-  crawler-scheduler:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    restart: unless-stopped
-    command: ["python", "-m", "realestate.entrypoints.scheduler"]
+  # ------------------------------------------------------------------ one-shot jobs
+  config-sync:
+    <<: *app
+    restart: "no"
+    command: ["python", "-m", "realestate.entrypoints.cli", "sync-configs"]
     depends_on:
       postgres:
-        condition: service_healthy
-      kafka:
         condition: service_healthy
     volumes:
       - ../configs/sites:/app/configs/sites:ro
     environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER:-postgres_user}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres_secure_password}
-      - POSTGRES_DB=${POSTGRES_DB:-realestate_db}
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:19092
-      - KAFKA_RAW_TOPIC=${KAFKA_RAW_TOPIC:-realestate.raw_events}
-      - KAFKA_DLQ_TOPIC=${KAFKA_DLQ_TOPIC:-realestate.dlq_events}
+      <<: [*log-env, *postgres-env]
+
+  # ------------------------------------------------------------------ application
+  crawler-scheduler:
+    <<: *app
+    command: ["python", "-m", "realestate.entrypoints.scheduler"]
+    depends_on:
+      config-sync:
+        condition: service_completed_successfully
+      kafka-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: [*log-env, *postgres-env, *kafka-env]
 
   bronze-worker:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    restart: unless-stopped
+    <<: *app
     command: ["python", "-m", "realestate.entrypoints.bronze_worker"]
     deploy:
       replicas: 2
     depends_on:
-      kafka:
-        condition: service_healthy
       mongo:
         condition: service_healthy
+      kafka-setup:
+        condition: service_completed_successfully
     environment:
-      - MONGO_HOST=mongo
-      - MONGO_PORT=27017
-      - MONGO_USER=${MONGO_USER:-mongo_user}
-      - MONGO_PASSWORD=${MONGO_PASSWORD:-mongo_secure_password}
-      - MONGO_DB=${MONGO_DB:-realestate_raw}
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:19092
-      - KAFKA_RAW_TOPIC=${KAFKA_RAW_TOPIC:-realestate.raw_events}
-      - KAFKA_DLQ_TOPIC=${KAFKA_DLQ_TOPIC:-realestate.dlq_events}
-      - KAFKA_GROUP_RAW_WRITER=${KAFKA_GROUP_RAW_WRITER:-bds_bronze_mongo_group}
+      <<: [*log-env, *mongo-env, *kafka-env]
 
   silver-gold-worker:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    restart: unless-stopped
+    <<: *app
     command: ["python", "-m", "realestate.entrypoints.silver_gold_worker"]
     deploy:
       replicas: 2
     depends_on:
       postgres:
         condition: service_healthy
-      kafka:
-        condition: service_healthy
+      kafka-setup:
+        condition: service_completed_successfully
     environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER:-postgres_user}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres_secure_password}
-      - POSTGRES_DB=${POSTGRES_DB:-realestate_db}
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:19092
-      - KAFKA_RAW_TOPIC=${KAFKA_RAW_TOPIC:-realestate.raw_events}
-      - KAFKA_DLQ_TOPIC=${KAFKA_DLQ_TOPIC:-realestate.dlq_events}
-      - KAFKA_GROUP_CLEAN_PROCESSOR=${KAFKA_GROUP_CLEAN_PROCESSOR:-bds_silver_gold_pg_group}
+      <<: [*log-env, *postgres-env, *kafka-env]
+
+  dlq-worker:
+    <<: *app
+    command: ["python", "-m", "realestate.entrypoints.dlq_worker"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+      kafka-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: [*log-env, *mongo-env, *kafka-env]
 
 volumes:
   kafka_data:
   mongo_data:
   postgres_data:
-

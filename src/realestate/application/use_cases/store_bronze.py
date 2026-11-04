@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import List
+
 from realestate.application.ports.bronze_repository import BronzeRepository
 from realestate.domain.entities.listing import RawEventMessage
 

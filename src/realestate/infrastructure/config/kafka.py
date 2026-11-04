@@ -1,4 +1,5 @@
 from pydantic import Field
+
 from realestate.infrastructure.config.base import BaseSubSettings
 
 
@@ -11,4 +12,3 @@ class KafkaSettings(BaseSubSettings):
     KAFKA_GROUP_RAW_WRITER: str = Field(default="bds_bronze_mongo_group", min_length=1)
     KAFKA_GROUP_CLEAN_PROCESSOR: str = Field(default="bds_silver_gold_pg_group", min_length=1)
     KAFKA_GROUP_DLQ_WRITER: str = Field(default="bds_dlq_writer_group", min_length=1)
-    KAFKA_DLQ_FLUSH_TIMEOUT: float = Field(default=10.0, gt=0, le=60)

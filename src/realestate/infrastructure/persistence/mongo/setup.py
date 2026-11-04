@@ -1,6 +1,7 @@
 """MongoDB setup and index initialization for raw listings."""
 
 import logging
+
 from pymongo import ASCENDING, DESCENDING, MongoClient
 from pymongo.errors import PyMongoError
 

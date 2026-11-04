@@ -1,16 +1,17 @@
-from contextlib import asynccontextmanager
 import math
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, AsyncIterator
+
 from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from realestate.application.ports.config_repository import ConfigRepository
+from realestate.domain.entities.crawler_config import CrawlerConfig
 from realestate.domain.exceptions import (
     ConfigAlreadyExistsError,
     ConfigNotFoundError,
 )
-from realestate.application.ports.config_repository import ConfigRepository
-from realestate.domain.entities.crawler_config import CrawlerConfig
 from realestate.infrastructure.persistence.postgres.config_mapping import (
     COLUMN_FIELDS,
     config_to_row,
@@ -65,7 +66,6 @@ class PostgresConfigRepository(ConfigRepository):
         table = sql.Identifier(*table_parts)
 
         select_list = sql.SQL(", ").join(sql.Identifier(c) for c in _SELECT_COLUMNS)
-        write_list = sql.SQL(", ").join(sql.Identifier(c) for c in _WRITE_COLUMNS)
 
         self._q_get = sql.SQL(
             "SELECT {cols} FROM {table} WHERE site_id = %s"

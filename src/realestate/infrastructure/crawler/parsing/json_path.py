@@ -1,6 +1,10 @@
+"""Dotted / indexed JSON path lookup with comma-separated fallbacks."""
+
 from __future__ import annotations
+
 import re
 from typing import Any
+
 
 def extract_by_json_path(data: Any, path: str) -> Any:
     """Extract nested value by dotted path supporting array indexes like 'a.b[0].c'.

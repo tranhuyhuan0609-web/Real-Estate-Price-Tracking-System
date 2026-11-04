@@ -1,5 +1,8 @@
 from __future__ import annotations
+
 from typing import Any, Dict, Optional, Protocol
+
+from realestate.domain.services.scheduling import SiteRunState
 
 
 class CrawlRunRepository(Protocol):
@@ -37,3 +40,8 @@ class CrawlRunRepository(Protocol):
     ) -> int:
         ...
 
+    async def get_schedule_states(self) -> Dict[str, SiteRunState]:
+        ...
+
+    async def fail_interrupted_runs(self, max_age_minutes: int = 60) -> int:
+        ...

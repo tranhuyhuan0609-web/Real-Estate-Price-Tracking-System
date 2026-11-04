@@ -1,10 +1,11 @@
 """PostgreSQL repository for managing crawl_runs tracking sessions."""
 
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, Optional
+
 from psycopg.rows import dict_row
 
 from realestate.application.ports.crawl_run_repository import CrawlRunRepository
+from realestate.domain.services.scheduling import SiteRunState
 
 if TYPE_CHECKING:
     from psycopg_pool import AsyncConnectionPool
@@ -31,7 +32,9 @@ class PostgresCrawlRunRepository(CrawlRunRepository):
         async with self.pool.connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(query, (crawl_run_id, site_id, run_mode))
-                return await cur.fetchone()
+                row = await cur.fetchone()
+        assert row is not None  # INSERT ... RETURNING always yields the row
+        return row
 
     async def update_metrics(
         self,
@@ -42,7 +45,7 @@ class PostgresCrawlRunRepository(CrawlRunRepository):
     ) -> None:
         """Increment progress counters."""
         query = """
-            UPDATE crawl_runs 
+            UPDATE crawl_runs
             SET items_scraped = items_scraped + %s,
                 pages_crawled = GREATEST(pages_crawled, %s)
             WHERE crawl_run_id = %s;
@@ -58,7 +61,7 @@ class PostgresCrawlRunRepository(CrawlRunRepository):
     ) -> None:
         """Mark crawl session as completed or failed with finished timestamp."""
         query = """
-            UPDATE crawl_runs 
+            UPDATE crawl_runs
             SET status = %s,
                 finished_at = NOW(),
                 error_message = %s
@@ -74,7 +77,7 @@ class PostgresCrawlRunRepository(CrawlRunRepository):
     ) -> int:
         """Mark stale 'running' sessions older than max_age_minutes as 'failed' to prevent blocking."""
         query = """
-            UPDATE crawl_runs 
+            UPDATE crawl_runs
             SET status = 'failed',
                 finished_at = NOW(),
                 error_message = 'Session aborted due to stale running status (> ' || %s || ' minutes)'
@@ -85,4 +88,44 @@ class PostgresCrawlRunRepository(CrawlRunRepository):
         async with self.pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(query, (str(max_age_minutes), site_id, str(max_age_minutes)))
+                return cur.rowcount
+
+    async def get_schedule_states(self) -> Dict[str, SiteRunState]:
+        """last_run_at, latest full-sweep start and in-progress flag for every configured site."""
+        query = """
+            SELECT
+                c.site_id,
+                c.last_run_at,
+                (SELECT MAX(r.started_at) FROM crawl_runs r
+                  WHERE r.site_id = c.site_id AND r.run_mode = 'full_sweep') AS last_full_sweep_at,
+                EXISTS (SELECT 1 FROM crawl_runs r
+                         WHERE r.site_id = c.site_id AND r.status = 'running') AS running
+            FROM crawler_configs c;
+        """
+        async with self.pool.connection() as conn:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(query)
+                rows = await cur.fetchall()
+        return {
+            r["site_id"]: SiteRunState(
+                last_run_at=r["last_run_at"],
+                last_full_sweep_at=r["last_full_sweep_at"],
+                running=bool(r["running"]),
+            )
+            for r in rows
+        }
+
+    async def fail_interrupted_runs(self, max_age_minutes: int = 60) -> int:
+        """On scheduler start: fail 'running' sessions of any site left behind by a dead process."""
+        query = """
+            UPDATE crawl_runs
+            SET status = 'failed',
+                finished_at = NOW(),
+                error_message = 'Interrupted: still running when the scheduler restarted'
+            WHERE status = 'running'
+              AND started_at < NOW() - make_interval(mins => %s);
+        """
+        async with self.pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, (max_age_minutes,))
                 return cur.rowcount

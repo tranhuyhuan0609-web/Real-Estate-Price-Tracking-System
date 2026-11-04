@@ -1,115 +1,95 @@
 # Real Estate Price Tracking System (Hệ Thống Theo Dõi Biến Động Giá Bất Động Sản)
 
-Hệ thống thu thập dữ liệu bất động sản phân tán, theo kiến trúc hướng sự kiện (Event-Driven) và Medallion Architecture (Bronze - Silver - Gold), tự động nhận diện tin trùng lặp, biến động giá, số điện thoại người bán, và tính toán chỉ số trung bình theo phường/xã.
+Hệ thống thu thập dữ liệu bất động sản phân tán, theo kiến trúc hướng sự kiện (Event-Driven) và Medallion Architecture (Bronze → Silver → Gold): tự động nhận diện tin trùng lặp, biến động giá, số điện thoại người bán, và tính chỉ số giá trung bình theo phường/xã.
+
+- **Kafka** tách spider (producer) khỏi các worker lưu trữ (consumer).
+- **Bronze – MongoDB**: payload gốc (`raw_listings`) + kho DLQ (`dlq_events`).
+- **Silver – PostgreSQL/PostGIS**: `listings`, `listing_details`, `advertisers` đã chuẩn hoá, dedup bằng fingerprint.
+- **Gold – PostgreSQL**: `listing_price_history` + materialized views `mv_ward_avg_price_per_m2`, `mv_steep_price_drops_7d`.
+- **Hexagonal architecture**: `domain` ← `application` ← `infrastructure` ← `entrypoints` (được kiểm tra bằng `tests/contract/test_layering.py`).
+- **Cấu hình site khai báo**: mỗi sàn là một file `configs/sites/<site_id>.yaml` — thêm sàn mới không cần sửa code.
+
+Chi tiết: [docs/architecture.md](docs/architecture.md) · Vận hành: [docs/runbook.md](docs/runbook.md) · Quyết định kiến trúc: [docs/adr/](docs/adr/)
 
 ---
 
-## 1. Mục Đích & Điểm Nổi Bật
+## Chạy trong 5 phút
 
-- **Event-Driven Streaming**: Sử dụng Apache Kafka làm trục xương sống, tách biệt hoàn toàn giữa spiders cào dữ liệu và các workers xử lý lưu trữ.
-- **Medallion Data Lakehouse Architecture**:
-  - **Bronze (MongoDB)**: Lưu trữ nguyên bản JSON/HTML raw payload, bảo đảm không mất mát dữ liệu.
-  - **Silver (PostgreSQL + PostGIS)**: Dữ liệu chuẩn hoá bảng `listings`, `listing_details`, `advertisers`. Phân tích tọa độ địa lý, giải mã số điện thoại, dedup fingerprint.
-  - **Gold (PostgreSQL & Materialized Views)**: Lịch sử biến động giá (`listing_price_history`), bảng tổng hợp giá $m^2$ theo phường/xã (`mv_ward_avg_price_per_m2`), tin giảm giá sâu trong 7 ngày (`mv_steep_price_drops_7d`).
-- **Clean Hexagonal Architecture**: Tách biệt Domain, Application (Use Cases & Ports Protocol), Infrastructure và Entrypoints.
-- **Per-Site YAML Configuration**: Quản lý cấu hình từng trang (`configs/sites/*.yaml`), dễ dàng mở rộng thêm sàn BĐS mới mà không cần sửa code.
+Yêu cầu: Docker Compose v2, [uv](https://docs.astral.sh/uv/) (tự cài Python 3.13 theo `.python-version`), `make`.
+
+```bash
+cp .env.example .env          # đổi mật khẩu nếu cần
+make up                       # Kafka, Mongo, Postgres+PostGIS, sync config, scheduler, 3 loại worker
+make ps                       # kiểm tra container
+```
+
+`make up` chạy theo thứ tự: Postgres khởi tạo schema từ `sql/init.sql` (chỉ khi volume trống) → job `config-sync` nạp `configs/sites/*.yaml` vào bảng `crawler_configs` → scheduler bắt đầu lập lịch.
+
+| Dịch vụ | Cổng host |
+|---|---|
+| Kafka | `16100` (UI: http://localhost:16101) |
+| MongoDB (Bronze) | `MONGO_PORT`, mặc định `16102` |
+| PostgreSQL (Silver/Gold) | `POSTGRES_PORT`, mặc định `16103` |
+
+### Phát triển local
+
+```bash
+make install                  # tạo .venv từ uv.lock
+make check                    # ruff + mypy + unit/contract test (giống CI)
+make test-integration         # Postgres/Mongo thật qua testcontainers (cần Docker)
+
+uv run realestate sync-configs --dry-run
+uv run realestate crawl --site meeyland --mode incremental
+uv run realestate replay-dlq --site-id meeyland --limit 100
+```
+
+`make help` liệt kê mọi lệnh.
 
 ---
 
-## 2. Kiến Trúc Thư Mục
+## Cấu trúc thư mục
 
 ```
-real-estate-tracker/
-├── README.md                     # mục đích, kiến trúc, cách chạy 5 phút
-├── LICENSE                       # MIT License
-├── pyproject.toml                # deps, ruff, mypy, pytest gom một chỗ
-├── uv.lock                       # khóa phiên bản
-├── .python-version               # Python 3.13
-├── .env.example                  # chỉ chứa biến mà Settings thực sự đọc
-├── Makefile                      # make up / test / lint / migrate
-│
-├── src/realestate/
-│   ├── domain/                   # thuần logic, không import hạ tầng
-│   │   ├── entities/             # listing, advertiser, crawl_run, crawler_config
-│   │   ├── value_objects/        # price, area, listing_key, fingerprint
-│   │   ├── services/             # price_change, fingerprint
-│   │   └── location/             # parser địa chỉ + dữ liệu hành chính 63 tỉnh thành
-│   ├── application/
-│   │   ├── ports/                # interface (Protocol): repo, publisher, spider
-│   │   └── use_cases/            # crawl_site, ingest_silver_gold, store_bronze, apply_lifecycle
-│   ├── infrastructure/
-│   │   ├── crawler/
-│   │   │   ├── spiders/          # generic_api_spider, generic_html_spider, spider_factory
-│   │   │   └── parsing/          # price, area, phone, datetime, html_cleaner, road_width
-│   │   ├── persistence/
-│   │   │   ├── postgres/         # listing_repo, lifecycle_repo, config_repo, crawl_run_repo
-│   │   │   └── mongo/            # bronze_repo, setup
-│   │   ├── messaging/            # producer, base_consumer, clean_consumer, raw_consumer, dlq
-│   │   └── config/               # Settings (pydantic-settings)
-│   ├── entrypoints/              # composition roots
-│   │   ├── scheduler.py          # Crawler Scheduler
-│   │   ├── bronze_worker.py      # Raw Mongo Consumer
-│   │   ├── silver_gold_worker.py # Relational Postgres Consumer
-│   │   └── cli.py                # crawl, replay-dlq, reset
-│   └── bootstrap.py              # dependency injection container
-│
-├── configs/sites/                # file YAML cấu hình từng site
-│   ├── meeyland.yaml
-│   ├── nhatot.yaml
-│   └── ...
-│
-├── migrations/                   # Alembic versioned migrations
-├── tests/
-│   ├── unit/                     # domain & parsers
-│   ├── contract/                 # kiểm tra tính hợp lệ của mọi YAML config
-│   ├── integration/              # Postgres, Mongo, Kafka
-│   └── fixtures/                 # HTML/JSON payloads mẫu
-│
+├── pyproject.toml            # dependencies, scripts, pytest, ruff, mypy
+├── uv.lock                   # lock cho dev/CI (uv)
+├── requirements.lock         # export từ uv.lock (có hash) cho Docker image — `make lock`
+├── .python-version           # 3.13
+├── .env.example              # đúng các biến Settings đọc (có contract test)
+├── Makefile
+├── alembic.ini
+├── sql/init.sql              # schema + materialized views (Postgres chạy khi khởi tạo volume)
+├── configs/sites/*.yaml      # nguồn sự thật cho crawler_configs (ADR 0004)
 ├── docker/
 │   ├── Dockerfile
 │   └── docker-compose.yml
-└── docs/
-    ├── architecture.md           # sơ đồ luồng dữ liệu
-    ├── adr/                      # Architecture Decision Records
-    └── runbook.md                # vận hành, DLQ replay, lifecycle
+├── docs/
+│   ├── architecture.md
+│   ├── runbook.md
+│   └── adr/
+├── migrations/               # Alembic; 001 = baseline trùng khớp sql/init.sql
+├── src/realestate/
+│   ├── domain/               # entities, value_objects, services, location — không I/O
+│   ├── application/
+│   │   ├── ports/            # Protocol: repositories, publisher, spider
+│   │   └── use_cases/        # crawl_site, store_bronze, ingest_silver_gold,
+│   │                         # apply_lifecycle, reveal_phone, sync_site_configs
+│   ├── infrastructure/
+│   │   ├── crawler/          # spiders/, parsing/ (1 module / loại dữ liệu), http_clients (pool theo proxy)
+│   │   ├── persistence/      # postgres/, mongo/
+│   │   ├── messaging/        # producer, base_consumer + 3 consumer, DLQ (forward/replay)
+│   │   └── config/           # Settings, loader cho configs/sites
+│   ├── entrypoints/          # scheduler, bronze_worker, silver_gold_worker, dlq_worker, cli
+│   └── bootstrap.py          # composition root (AppContainer, khởi tạo lazy)
+└── tests/
+    ├── unit/                 # domain/, parsers/, use_cases/, repos/, consumers/, config/
+    ├── contract/             # YAML site, .env.example, schema ↔ migration, phân lớp
+    ├── integration/          # PostGIS + Mongo thật (marker `integration`)
+    ├── fixtures/             # payload mẫu đã ẩn danh
+    └── helpers.py            # test double dùng chung
 ```
 
----
+## Thêm một sàn mới
 
-## 3. Hướng Dẫn Chạy Trong 5 Phút (Quick Start)
-
-### Bước 1: Chuẩn bị môi trường
-```bash
-cp .env.example .env
-```
-
-### Bước 2: Khởi động toàn bộ cụm dịch vụ
-```bash
-make up
-# hoặc: docker compose -f docker/docker-compose.yml up -d --build
-```
-Dịch vụ sẽ khởi tạo:
-- **Kafka & Zookeeper-less Raft**: Cổng `16100` (Kafka UI: `http://localhost:16101`)
-- **MongoDB (Bronze)**: Cổng `16102`
-- **PostgreSQL (Silver & Gold)**: Cổng `16103`
-- **Crawler Scheduler & Workers**: Tự động kết nối và chạy ngầm.
-
-### Bước 3: Chạy test kiểm thử toàn bộ hệ thống
-```bash
-pytest tests/
-```
-
-### Bước 4: Chạy cào dữ liệu thủ công qua CLI
-```bash
-# Cào tin tức thời (Incremental)
-python -m realestate.entrypoints.cli crawl --site meeyland --mode incremental
-
-# Cào quét toàn bộ danh mục (Full Sweep)
-python -m realestate.entrypoints.cli crawl --site nhatot --mode full_sweep
-```
-
-### Bước 5: Replay Dead Letter Queue (DLQ)
-```bash
-python -m realestate.entrypoints.cli replay-dlq --site-id meeyland --limit 100
-```
-
+1. Tạo `configs/sites/<site_id>.yaml` (tên file phải trùng `site_id`).
+2. `make test` — contract test kiểm tra schema, ngân sách trang, rate limit và round-trip qua DB.
+3. `make sync-configs` (hoặc `make up`, job `config-sync` tự chạy).

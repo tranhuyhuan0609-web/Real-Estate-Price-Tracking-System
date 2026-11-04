@@ -1,6 +1,9 @@
 from __future__ import annotations
+
 from typing import Optional
+
 from realestate.domain.value_objects.price import PriceChangeEvaluation, PriceStatus
+
 
 def evaluate_price_change(
     old_price: Optional[float | int],

@@ -13,6 +13,8 @@ Refactor codebase into explicit Hexagonal layers:
 - `realestate.infrastructure`: Concrete implementations of ports (PostgreSQL repos, Mongo repos, Kafka publishers/consumers, HTTP spiders).
 - `realestate.entrypoints`: Thin composition runners (CLI, scheduler, workers) wire dependencies using `bootstrap.py`.
 
+The dependency rule is enforced by `tests/contract/test_layering.py`.
+
 ## Consequences
 - **Pros**: Domain and use cases can be 100% unit tested in milliseconds without database or broker containers; infrastructure adapters can be swapped or upgraded independently.
 - **Cons**: Additional interface protocols and adapter mappings required.

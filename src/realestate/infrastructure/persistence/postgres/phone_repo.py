@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional
+
 from psycopg.rows import dict_row
 
 if TYPE_CHECKING:
@@ -26,7 +27,7 @@ class PgPhoneListingRepository(PgPhoneRepository):
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
-                    SELECT 
+                    SELECT
                         l.listing_key,
                         l.source,
                         l.advertiser_id,

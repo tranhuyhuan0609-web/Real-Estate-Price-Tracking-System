@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import json
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional, Tuple
+
 from psycopg.rows import dict_row
+
 from realestate.application.ports.listing_repository import ListingRepository
 from realestate.domain.entities import (
     AdvertiserData,
@@ -62,7 +64,8 @@ class PgListingRepository(ListingRepository):
 
         # Step 2: Lock & query current listing
         await cur.execute(
-            "SELECT current_price_vnd, current_price_per_m2, price_status, status, advertiser_id FROM listings WHERE listing_key = %s FOR UPDATE;",
+            "SELECT current_price_vnd, current_price_per_m2, price_status, status, advertiser_id, "
+            "first_seen_at, last_seen_at FROM listings WHERE listing_key = %s FOR UPDATE;",
             (item.listing_key,),
         )
         existing = await cur.fetchone()
@@ -128,6 +131,8 @@ class PgListingRepository(ListingRepository):
                     insert_history_query,
                     (item.listing_key, crawl_run_id, item.current_price_vnd, item.current_price_per_m2, event_time),
                 )
+        elif self._is_stale(existing, event_time):
+            await self._apply_stale_event(cur, item, event_time)
         else:
             # Existing listing: check price evolution
             old_price = existing["current_price_vnd"]
@@ -159,6 +164,7 @@ class PgListingRepository(ListingRepository):
             # Unified single UPDATE statement for listings
             update_listing_query = """
                 UPDATE listings SET
+                    first_seen_at = LEAST(listings.first_seen_at, COALESCE(%s, listings.first_seen_at)),
                     last_seen_at = GREATEST(listings.last_seen_at, COALESCE(%s, NOW())),
                     ended_at = NULL,
                     missing_count = 0,
@@ -180,6 +186,7 @@ class PgListingRepository(ListingRepository):
             await cur.execute(
                 update_listing_query,
                 (
+                    event_time,
                     event_time,
                     target_adv_id,
                     item.published_at,
@@ -258,6 +265,41 @@ class PgListingRepository(ListingRepository):
                 ),
             )
         return (is_new, price_changed)
+
+    @staticmethod
+    def _is_stale(existing: dict, event_time: Optional[datetime]) -> bool:
+        """An event observed before the newest one already applied (DLQ replay, Kafka backlog).
+
+        Events without a timestamp are treated as "now" and are never stale.
+        """
+        last_seen = existing.get("last_seen_at")
+        return event_time is not None and last_seen is not None and event_time < last_seen
+
+    async def _apply_stale_event(
+        self, cur, item: ParsedListingItem, event_time: Optional[datetime]
+    ) -> None:
+        """Record what an out-of-order event can still tell us without rolling state back.
+
+        Price, status, missing_count, advertiser and details reflect the newest observation, so
+        they are left alone (no price history row either). The event can only widen the
+        observed window: an event older than first_seen_at moves first_seen_at back, which also
+        keeps chk_listing_time_order (last_seen_at >= first_seen_at) satisfied.
+        """
+        logger.info(
+            "Ignoring stale event for '%s' (event_time=%s is older than last_seen_at).",
+            item.listing_key,
+            event_time,
+        )
+        await cur.execute(
+            """
+            UPDATE listings SET
+                first_seen_at = LEAST(first_seen_at, %s),
+                published_at = COALESCE(published_at, %s)
+            WHERE listing_key = %s
+              AND (first_seen_at > %s OR (published_at IS NULL AND %s::timestamptz IS NOT NULL));
+            """,
+            (event_time, item.published_at, item.listing_key, event_time, item.published_at),
+        )
 
     async def ingest_listing_transactional(
         self,

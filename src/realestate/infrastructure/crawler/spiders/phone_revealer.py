@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 import re
 from typing import Optional, Tuple
+
 import httpx
 from parsel import Selector
+
 from realestate.infrastructure.crawler.parsing.listing_parser import (
     clean_email,
     decode_cloudflare_email,
@@ -78,53 +80,73 @@ class PhoneRevealer:
     async def reveal_phone(
         self,
         url: str,
-        site_id: str = "",
+        source: str = "",
         existing_phone: Optional[str] = None,
     ) -> Optional[str]:
-        """Reveal full phone number on demand.
-        
-        Resolution order:
-        1. If existing_phone is already unmasked and valid, return it immediately.
-        2. Fast HTTP fetch & static/data-attribute DOM extraction.
-        3. Headless browser button-click automation (Tier 3) if installed.
+        """Reveal the full phone number of a listing.
+
+        1. ``existing_phone`` if it is already unmasked.
+        2. Static HTML: data attributes, tel:/Zalo links, hidden inputs, inline JSON.
+        3. Click-to-reveal in a headless browser (only if Playwright is installed).
         """
-        # Tier 0: Check if existing phone is already complete
-        cleaned = clean_phone_number(existing_phone)
-        if cleaned:
-            logger.debug("Existing phone for %s is already unmasked: %s", url, cleaned)
-            return cleaned
-
-        if not url:
-            logger.warning("Cannot reveal phone: URL is empty.")
-            return None
-
-        # Tier 1 & 2: Fast HTTP fetch & DOM / Attribute parsing
-        phone = await self._extract_from_http(url)
-        if phone:
-            return phone
-
-        # Tier 3: Dynamic button click via headless browser if needed
-        phone = await self._extract_via_headless(url)
+        phone, _ = await self.reveal_contact(url, source, existing_phone=existing_phone, want_email=False)
         return phone
 
-    async def _extract_from_http(self, url: str) -> Optional[str]:
-        """Fetch URL via HTTP client and search for embedded full phone in attributes/DOM/scripts."""
+    async def reveal_email(
+        self,
+        url: str,
+        source: str = "",
+        existing_email: Optional[str] = None,
+    ) -> Optional[str]:
+        """Reveal the unmasked advertiser email (existing value, then static HTML)."""
+        _, email = await self.reveal_contact(url, source, existing_email=existing_email, want_phone=False)
+        return email
+
+    async def reveal_contact(
+        self,
+        url: str,
+        source: str = "",
+        existing_phone: Optional[str] = None,
+        existing_email: Optional[str] = None,
+        *,
+        want_phone: bool = True,
+        want_email: bool = True,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Reveal phone and email, downloading the listing page at most once."""
+        phone = clean_phone_number(existing_phone) if want_phone else None
+        email = clean_email(existing_email) if want_email else None
+        need_phone = want_phone and phone is None
+        need_email = want_email and email is None
+        if not (need_phone or need_email):
+            return phone, email
+        if not url:
+            logger.warning("Cannot reveal contact for source '%s': URL is empty.", source)
+            return phone, email
+
+        html = await self._fetch_html(url)
+        if html:
+            if need_phone:
+                phone = self.extract_from_html(html)
+            if need_email:
+                email = self.extract_email_from_html(html)
+
+        if want_phone and phone is None:
+            phone = await self._extract_via_headless(url)
+        return phone, email
+
+    async def _fetch_html(self, url: str) -> Optional[str]:
         try:
             async with httpx.AsyncClient(
-                headers=self.headers,
-                timeout=self.timeout_sec,
-                follow_redirects=True,
+                headers=self.headers, timeout=self.timeout_sec, follow_redirects=True
             ) as client:
                 resp = await client.get(url)
-                if resp.status_code >= 400:
-                    logger.debug("HTTP GET %s returned %s", url, resp.status_code)
-                    return None
-                html = resp.text
         except Exception as exc:
             logger.debug("Failed HTTP GET %s: %s", url, exc)
             return None
-
-        return self.extract_from_html(html)
+        if resp.status_code >= 400:
+            logger.debug("HTTP GET %s returned %s", url, resp.status_code)
+            return None
+        return resp.text
 
     def extract_from_html(self, html: str) -> Optional[str]:
         """Extract phone from HTML string using multiple heuristics."""
@@ -228,7 +250,6 @@ class PhoneRevealer:
 
         return None
 
-
     def extract_email_from_html(self, html: str) -> Optional[str]:
         """Extract unmasked advertiser email from HTML string using multi-tier heuristics."""
         if not html:
@@ -280,41 +301,3 @@ class PhoneRevealer:
 
         # 6. Fallback: regex scan text content
         return extract_email_from_text(html)
-
-    async def reveal_email(
-        self,
-        url: str,
-        site_id: str = "",
-        existing_email: Optional[str] = None,
-    ) -> Optional[str]:
-        """Reveal unmasked email on demand."""
-        cleaned = clean_email(existing_email)
-        if cleaned:
-            return cleaned
-
-        if not url:
-            return None
-
-        try:
-            async with httpx.AsyncClient(headers=self.headers, timeout=self.timeout_sec, follow_redirects=True) as client:
-                resp = await client.get(url)
-                if resp.status_code < 400:
-                    email = self.extract_email_from_html(resp.text)
-                    if email:
-                        return email
-        except Exception as exc:
-            logger.debug("Failed to fetch %s for email reveal: %s", url, exc)
-
-        return None
-
-    async def reveal_contact(
-        self,
-        url: str,
-        site_id: str = "",
-        existing_phone: Optional[str] = None,
-        existing_email: Optional[str] = None,
-    ) -> Tuple[Optional[str], Optional[str]]:
-        """Reveal both unmasked phone and email in a single pass."""
-        p = await self.reveal_phone(url=url, site_id=site_id, existing_phone=existing_phone)
-        e = await self.reveal_email(url=url, site_id=site_id, existing_email=existing_email)
-        return (p, e)

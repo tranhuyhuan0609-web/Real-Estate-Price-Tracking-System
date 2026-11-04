@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 import asyncio
-import copy
 import json
 import logging
 import re
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlsplit
+
 import httpx
 from parsel import Selector
 
 from realestate.application.ports.spider import Spider
 from realestate.domain.entities import ParsedListingItem, RunMode
 from realestate.domain.entities.crawler_config import CrawlerConfig
-from realestate.infrastructure.crawler.parsing.listing_parser import ListingParser, extract_by_json_path
+from realestate.infrastructure.crawler.http_clients import HttpClientPool
+from realestate.infrastructure.crawler.parsing.listing_parser import (
+    ListingParser,
+    extract_by_json_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +38,7 @@ class GenericHtmlSpider(Spider):
         # Crawl health signals read by CrawlSiteUseCase (see GenericApiSpider)
         self.aborted_reason: Optional[str] = None
         self.exhausted: bool = False
-        self._proxy_index: int = 0
+        self._clients: HttpClientPool | None = None
 
     def _extract_selector_value(self, context: Selector, selector_str: str, is_list: bool = False) -> Any:
         """Extract text or attribute using CSS, XPath, or embedded JSON selector."""
@@ -105,30 +109,17 @@ class GenericHtmlSpider(Spider):
 
     async def _send_request(
         self,
-        client: httpx.AsyncClient,
         url: str,
         params: Optional[Dict[str, Any]] = None,
     ) -> Optional[httpx.Response]:
         retries = self.rate_cfg.retry_times
         timeout = self.rate_cfg.timeout_sec
-        headers = dict(self.req_cfg.headers)
-        proxies = (
-            list(self.config.proxy_settings.proxies)
-            if self.config.proxy_settings and self.config.proxy_settings.enabled and self.config.proxy_settings.proxies
-            else []
-        )
+        assert self._clients is not None, "only called from crawl()"
 
         for attempt in range(1 + retries):
-            current_proxy = None
-            if proxies:
-                current_proxy = proxies[(self._proxy_index + attempt) % len(proxies)]
-
+            client = self._clients.next()  # advances to the next proxy when rotating
             try:
-                if current_proxy and current_proxy != getattr(client, "_current_proxy", None):
-                    async with httpx.AsyncClient(proxy=current_proxy, headers=headers, follow_redirects=True) as rot_client:
-                        response = await rot_client.get(url=url, params=params, timeout=timeout)
-                else:
-                    response = await client.get(url=url, params=params, timeout=timeout)
+                response = await client.get(url=url, params=params, timeout=timeout)
 
                 if response.status_code == 200:
                     return response
@@ -196,24 +187,18 @@ class GenericHtmlSpider(Spider):
         if "Accept" not in headers:
             headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 
-        proxy_url = None
-        if self.config.proxy_settings and self.config.proxy_settings.enabled and self.config.proxy_settings.proxies:
-            proxy_url = self.config.proxy_settings.proxies[0]
-
-        client_kwargs: Dict[str, Any] = {"headers": headers, "follow_redirects": True}
-        if proxy_url:
-            client_kwargs["proxy"] = proxy_url
-
         concurrency = max(1, self.rate_cfg.concurrent_requests)
         detail_semaphore = asyncio.Semaphore(concurrency)
 
-        async with httpx.AsyncClient(**client_kwargs) as client:
+        async with HttpClientPool(
+            self.config.proxy_settings, headers=headers, follow_redirects=True
+        ) as self._clients:
             current_page = start_page
             current_offset = 0
 
             while self.pages_crawled < max_pages:
                 url, params = self._build_page_url_and_params(current_page, current_offset)
-                response = await self._send_request(client, url, params=params if params else None)
+                response = await self._send_request(url, params=params if params else None)
 
                 if response is None:
                     logger.warning("No response received for %s. Stopping crawl at page %d", url, current_page)
@@ -287,7 +272,7 @@ class GenericHtmlSpider(Spider):
                             try:
                                 if self.rate_cfg.download_delay_sec > 0:
                                     await asyncio.sleep(self.rate_cfg.download_delay_sec)
-                                detail_res = await self._send_request(client, detail_url)
+                                detail_res = await self._send_request(detail_url)
                                 if detail_res and detail_res.status_code == 200:
                                     detail_sel = Selector(text=detail_res.text)
                                     for df_name, df_sel in self.detail_cfg.fields.items():

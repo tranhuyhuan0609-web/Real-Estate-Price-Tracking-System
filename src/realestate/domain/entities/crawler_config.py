@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import re
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Literal
@@ -21,7 +22,6 @@ ALLOWED_PROXY_SCHEMES = frozenset({"http", "https", "socks5"})
 
 RunMode = Literal["incremental", "full_sweep"]
 
-DEFAULT_MAPPING_KEY = "_default"
 
 # Every name a response_mapping may fill. Anything else is a typo.
 MAPPABLE_FIELDS = frozenset(
@@ -127,11 +127,6 @@ class PaginationSettings(StrictBaseModel):
         "Defaults to response_mapping.items_path.",
     )
 
-    @field_validator("stop_when_empty_path")
-    @classmethod
-    def validate_stop_path(cls, value: str | None) -> str | None:
-        return value
-
     @model_validator(mode="after")
     def validate_budgets(self) -> PaginationSettings:
         if self.max_pages_full_sweep < self.max_pages_incremental:
@@ -162,19 +157,11 @@ class ResponseMapping(StrictBaseModel):
     fields: dict[str, str]
     value_mappings: dict[str, dict[str, str]] = Field(default_factory=dict)
 
-    @field_validator("items_path")
-    @classmethod
-    def validate_items_path(cls, value: str) -> str:
-        return value
-
     @model_validator(mode="after")
     def validate_mapping(self) -> ResponseMapping:
         unknown = self.fields.keys() - MAPPABLE_FIELDS
         if unknown:
             raise ValueError(f"Unknown mapped fields: {sorted(unknown)}.")
-
-        for name, path in self.fields.items():
-            pass
 
         missing = REQUIRED_MAPPED_FIELDS - self.fields.keys()
         if missing:
@@ -426,8 +413,8 @@ class CrawlerConfig(StrictBaseModel):
     def items_stop_path(self) -> str:
         return self.pagination.stop_when_empty_path or self.response_mapping.items_path
 
-    def max_pages(self, run_mode: RunMode) -> int:
-        """Page budget for one crawl run of the given mode."""
+    def max_pages(self, run_mode: str) -> int:
+        """Page budget for one crawl run of the given mode (a RunMode value or the enum itself)."""
         if run_mode == "incremental":
             return self.pagination.max_pages_incremental
         if run_mode == "full_sweep":

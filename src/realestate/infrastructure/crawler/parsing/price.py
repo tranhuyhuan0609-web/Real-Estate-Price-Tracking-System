@@ -1,33 +1,16 @@
+"""Vietnamese price parsing ("3 tỷ 500 triệu", "45 triệu/m²", ...)."""
+
 from __future__ import annotations
+
 import re
 from typing import Any, Optional, Tuple
 
 MAX_VALID_PRICE_VND = 5_000_000_000_000  # 5,000 tỷ VNĐ sanity threshold
 
-def normalize_vietnamese_number_str(s: str) -> str:
-    """Normalize a Vietnamese numeric string with possible thousand/decimal separators."""
-    s = s.strip()
-    if "." in s and "," in s:
-        if s.rfind(",") > s.rfind("."):
-            s = s.replace(".", "").replace(",", ".")
-        else:
-            s = s.replace(",", "")
-    elif "." in s:
-        if re.search(r"^\d{1,3}(?:\.\d{3})+$", s):
-            s = s.replace(".", "")
-        elif re.search(r"\b\d{1,3}\.\d{3}(?!\d)", s):
-            s = re.sub(r"(?<=\d)\.(\d{3})(?!\d)", r"\1", s)
-    elif "," in s:
-        if re.search(r"^\d{1,3}(?:,\d{3})+$", s):
-            s = s.replace(",", "")
-        elif re.search(r"\b\d{1,3},(\d{3})(?!\d)", s):
-            s = re.sub(r"(?<=\d),(\d{3})(?!\d)", r"\1", s)
-        else:
-            s = s.replace(",", ".")
-    return s
 
 def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Optional[float], Optional[float]]:
     """Parse real estate price from raw float, int or Vietnamese text (e.g. '5.2 tỷ', '850 triệu', '45 tr/m2').
+
     Returns:
         Tuple[Optional[float], Optional[float]]: (price_vnd, price_per_m2)
     """
@@ -63,10 +46,12 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
             return None, None
         return price_vnd, price_m2
 
+    # Clean rental suffixes e.g. '/tháng', '/th', '/năm'
     text = re.sub(r"/\s*(?:tháng|thang|th|năm|nam)\b", "", text)
 
     # 2. Compound price:
     # 2a. Tỷ + Triệu (e.g. "1 tỷ 250 triệu", "2 tỷ 100", "2 tỷ 5", "1 tỷ 25 triệu")
+    # Negative lookahead ensures that an adjacent area (e.g. "3 tỷ 100 m2") is not mistakenly parsed as millions
     m_ty_tr = re.search(
         r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:tỷ|ty|tỉ|ti)\s*"
         r"([0-9]+(?:[\.,][0-9]+)?)\b"
@@ -92,7 +77,7 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
         pm2 = round(total / area, 0) if area and area > 0 else None
         return total, pm2
 
-    # 2b. Triệu + Nghìn
+    # 2b. Triệu + Nghìn (e.g. "2 triệu 500 nghìn", "2 triệu 50 nghìn", "2 triệu 5")
     m_tr_k = re.search(
         r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:triệu|trieu|tr)\s*"
         r"([0-9]+(?:[\.,][0-9]+)?)\b"
@@ -118,7 +103,7 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
         pm2 = round(total / area, 0) if area and area > 0 else None
         return total, pm2
 
-    # 3. Single unit
+    # 3. Single unit: "5,2 tỷ", "850 triệu", "500 k"
     m_single = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(tỷ|ty|tỉ|ti|triệu|trieu|tr|nghìn|ngan|k)\b", text)
     if m_single:
         num = float(m_single.group(1).replace(",", "."))
@@ -134,7 +119,7 @@ def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Opti
         pm2 = round(total / area, 0) if area and area > 0 else None
         return total, pm2
 
-    # 4. Pure digits
+    # 4. Pure digits: "2500000000"
     clean_digits = re.sub(r"[^\d]", "", text)
     if clean_digits and len(clean_digits) >= 6:
         val = float(clean_digits)

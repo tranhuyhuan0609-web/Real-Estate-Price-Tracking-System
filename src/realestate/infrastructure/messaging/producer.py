@@ -5,7 +5,9 @@ import inspect
 import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
+
 from aiokafka import AIOKafkaProducer
+
 from realestate.application.ports.event_publisher import EventPublisher
 
 logger = logging.getLogger(__name__)

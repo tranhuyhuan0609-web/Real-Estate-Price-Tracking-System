@@ -1,6 +1,9 @@
 from __future__ import annotations
+
 from enum import Enum
+
 from pydantic import BaseModel
+
 
 class PriceStatus(str, Enum):
     INITIAL = "initial"

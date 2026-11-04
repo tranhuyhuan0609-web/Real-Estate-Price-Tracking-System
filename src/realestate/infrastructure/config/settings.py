@@ -1,5 +1,7 @@
 from functools import lru_cache
+
 from pydantic import model_validator
+
 from .app import AppSettings
 from .database import DatabaseSettings
 from .kafka import KafkaSettings

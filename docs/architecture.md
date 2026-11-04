@@ -9,7 +9,9 @@ The system follows **Clean Hexagonal Architecture** and the **Medallion Architec
 ```mermaid
 flowchart TD
     subgraph Schedulers ["Schedulers & Spiders"]
-        SCHED["Crawler Scheduler (Cron / Fixed Slot)"] --> SPIDERS["Generic API & HTML Spiders"]
+        YAML["configs/sites/*.yaml"] -- "config-sync (one-shot)" --> PG_CFG[("PostgreSQL: crawler_configs")]
+        PG_CFG --> SCHED["Crawler Scheduler (Cron / Fixed Slot)"]
+        SCHED --> SPIDERS["Generic API & HTML Spiders"]
         SPIDERS --> KAFKA_RAW["Kafka: realestate.raw_events"]
     end
 
@@ -28,6 +30,7 @@ flowchart TD
 
     subgraph DLQ ["Dead Letter Queue (DLQ)"]
         CLEAN_CONSUMER -. Poison Pills / Errors .-> KAFKA_DLQ["Kafka: realestate.dlq_events"]
+        BRONZE_CONSUMER -. Errors .-> KAFKA_DLQ
         KAFKA_DLQ --> DLQ_WORKER["DLQ Consumer"] --> MONGO_DLQ[("MongoDB: dlq_events")]
         MONGO_DLQ -. CLI Replay .-> KAFKA_RAW
     end
@@ -63,9 +66,35 @@ flowchart TD
 
 | Component | Responsibility | Scaling Pattern |
 |:---|:---|:---|
-| **Scheduler** | Reads site schedules from `configs/sites/*.yaml`, checks due runs, triggers `CrawlSiteUseCase` | Single coordinator / Leader |
+| **Config sync** | One-shot job: upserts `configs/sites/*.yaml` into `crawler_configs` before the scheduler starts (ADR 0004) | Runs once per deploy |
+| **Scheduler** | Polls `crawler_configs` in PostgreSQL, checks due runs, triggers `CrawlSiteUseCase` | Single coordinator / Leader |
 | **Spiders** | Generic REST and HTML parsers streaming listing items through async HTTP | Partitioned by site / concurrent workers |
 | **Bronze Worker** | Consumes from `realestate.raw_events` and bulk-upserts into MongoDB | Horizontally scalable (Kafka consumer group) |
 | **Silver/Gold Worker** | Consumes events, evaluates price delta, inserts transactional silver/gold records | Horizontally scalable (Kafka consumer group) |
-| **DLQ Worker & CLI** | Isolates malformed payloads, allows manual inspection and CLI replay | Idempotent on replay |
+| **DLQ Worker** (`entrypoints/dlq_worker.py`) | Archives `realestate.dlq_events` into MongoDB `dlq_events` | Single consumer group |
+| **CLI** (`realestate ...`) | `sync-configs`, `crawl`, `replay-dlq --source mongo\|kafka`, `reset` | Operator-driven |
 
+
+---
+
+## 4. Wiring & Process Model
+
+- `src/realestate/bootstrap.py` (`AppContainer`) is the composition root for every process: the scheduler,
+  the three workers (`bronze_worker()`, `silver_gold_worker()`, `dlq_worker()`) and the CLI. It builds connections
+  lazily, so each process opens only what it uses.
+- `src/realestate/entrypoints/_runtime.py` sets up each process: logging level from `CRAWLER_LOG_LEVEL`, the selector event
+  loop on Windows (needed by psycopg async), and SIGINT/SIGTERM handling.
+- `infrastructure/messaging/base_consumer.py` owns the consume loop shared by the three consumers:
+  decode → batch store → sequential fallback → DLQ (`forward_to_dlq`) for poison pills → seek back for
+  anything neither stored nor parked → commit. Consumers only implement `decode`, `process_batch`,
+  `process_one`, `is_poison_pill` and optional `setup` / `after_batch`.
+- Scheduling policy is pure domain code (`domain/services/scheduling.py::decide_run`). Full-sweep slots are
+  read in each site's `source_timezone` through `CrawlerConfig.latest_scheduled_slot`.
+
+## 5. Ordering Guarantees (Silver/Gold)
+
+Kafka redelivery, DLQ replays and backlog catch-up can deliver an observation older than the one already
+applied. `PgListingRepository` treats an event with `event_time < listings.last_seen_at` as **stale**. A stale
+event never changes price, status, `missing_count`, advertiser or details, and never writes price history.
+It can only widen the observed window (`first_seen_at = LEAST(...)`, which also keeps
+`chk_listing_time_order` valid) and fill a missing `published_at`.

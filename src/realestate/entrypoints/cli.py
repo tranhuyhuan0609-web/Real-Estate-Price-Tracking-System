@@ -1,86 +1,120 @@
+"""Operator CLI: ``realestate <command>`` (or ``python -m realestate.entrypoints.cli``)."""
+
 from __future__ import annotations
+
 import argparse
 import asyncio
 import logging
-import sys
-from typing import Optional
+from pathlib import Path
 
 from realestate.bootstrap import AppContainer
 from realestate.domain.entities.crawl_run import RunMode
+from realestate.entrypoints._runtime import configure_runtime
+from realestate.infrastructure.config.site_configs import DEFAULT_SITES_DIR, load_site_configs
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("realestate_cli")
 
+# Silver/Gold tables wiped by `reset`. crawler_configs and crawl_runs are kept.
+RESET_TABLES = ("listing_price_history", "listing_details", "listings", "advertisers")
 
-async def run_crawl(site_id: str, mode: str):
-    container = AppContainer()
-    await container.start()
-    try:
+
+async def run_crawl(site_id: str, mode: str) -> None:
+    async with AppContainer() as c:
+        await c.open_pg()
+        await c.start_publisher()
         run_mode = RunMode.FULL_SWEEP if mode == "full_sweep" else RunMode.INCREMENTAL
         logger.info("Starting crawl for '%s' in %s mode...", site_id, run_mode.value)
-        run_id = await container.crawl_site_uc.execute(site_id=site_id, run_mode=run_mode)
+        run_id = await c.crawl_site_uc.execute(site_id=site_id, run_mode=run_mode)
         logger.info("Crawl completed with run_id: %s", run_id)
-    finally:
-        await container.close()
 
 
-async def run_replay_dlq(source: str = "mongo", site_id: Optional[str] = None, limit: int = 100):
-    container = AppContainer()
-    await container.start()
-    try:
-        from realestate.infrastructure.messaging.dlq import replay_from_mongo
+async def run_sync_configs(directory: Path, dry_run: bool) -> None:
+    """Upsert configs/sites/*.yaml into crawler_configs. Only needs PostgreSQL."""
+    configs = load_site_configs(directory)
+    async with AppContainer() as c:
+        await c.open_pg()
+        report = await c.sync_site_configs_uc.execute(configs, dry_run=dry_run)
+    print(
+        f"{'[dry-run] ' if dry_run else ''}{len(configs)} site configs: "
+        f"created={report.created} updated={report.updated} unchanged={len(report.unchanged)}"
+    )
+
+
+async def run_replay_dlq(source: str, site_id: str | None, limit: int, delete: bool) -> None:
+    from realestate.infrastructure.messaging.dlq import replay_from_kafka, replay_from_mongo
+
+    async with AppContainer() as c:
+        settings = c.settings
+        publisher = await c.start_publisher()
         logger.info("Replaying up to %d messages from DLQ (%s)...", limit, source)
-        count = await replay_from_mongo(
-            mongo_uri=container.settings.mongo_uri,
-            db_name=container.settings.MONGO_DB,
-            target_topic=container.settings.KAFKA_RAW_TOPIC,
-            publisher=container.publisher,
-            site_id=site_id,
-            limit=limit,
-        )
+        if source == "kafka":
+            count = await replay_from_kafka(
+                bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                dlq_topic=settings.KAFKA_DLQ_TOPIC,
+                target_topic=settings.KAFKA_RAW_TOPIC,
+                publisher=publisher,
+                site_id=site_id,
+                limit=limit,
+            )
+        else:
+            count = await replay_from_mongo(
+                mongo_uri=settings.mongo_uri,
+                db_name=settings.MONGO_DB,
+                target_topic=settings.KAFKA_RAW_TOPIC,
+                publisher=publisher,
+                site_id=site_id,
+                limit=limit,
+                delete_on_replay=delete,
+            )
         logger.info("Successfully replayed %d DLQ records.", count)
-    finally:
-        await container.close()
 
 
-async def run_reset(confirm: bool = False):
+async def run_reset(confirm: bool) -> None:
     if not confirm:
         logger.warning("Reset requires --confirm flag to avoid accidental data loss.")
         return
-    container = AppContainer()
-    await container.start()
-    try:
-        logger.info("Resetting listings, price history and bronze collections...")
-        async with container.pg_pool.connection() as conn:
+    async with AppContainer() as c:
+        pool = await c.open_pg()
+        logger.info("Resetting %s and the bronze raw_listings collection...", ", ".join(RESET_TABLES))
+        async with pool.connection() as conn:
             async with conn.transaction():
-                await conn.execute("TRUNCATE TABLE price_history, listing_details, listings, advertisers CASCADE;")
-        container.bronze_repo.raw_listings.delete_many({})
+                await conn.execute(f"TRUNCATE TABLE {', '.join(RESET_TABLES)} CASCADE;")
+        await c.bronze_repo.collection.delete_many({})
         logger.info("Reset complete.")
-    finally:
-        await container.close()
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Real Estate Tracker CLI")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="realestate", description="Real Estate Tracker CLI")
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    crawl_p = subparsers.add_parser("crawl", help="Trigger a site crawl manually")
+    crawl_p = sub.add_parser("crawl", help="Trigger a site crawl manually")
     crawl_p.add_argument("--site", required=True, help="Site ID to crawl")
     crawl_p.add_argument("--mode", default="incremental", choices=["incremental", "full_sweep"])
 
-    dlq_p = subparsers.add_parser("replay-dlq", help="Replay Dead Letter Queue messages")
+    sync_p = sub.add_parser("sync-configs", help="Upsert configs/sites/*.yaml into crawler_configs")
+    sync_p.add_argument("--dir", type=Path, default=DEFAULT_SITES_DIR, help="Site config directory")
+    sync_p.add_argument("--dry-run", action="store_true", help="Show what would change without writing")
+
+    dlq_p = sub.add_parser("replay-dlq", help="Replay Dead Letter Queue messages")
     dlq_p.add_argument("--source", default="mongo", choices=["mongo", "kafka"])
     dlq_p.add_argument("--site-id", default=None, help="Optional site ID to filter")
     dlq_p.add_argument("--limit", type=int, default=100, help="Max records to replay")
+    dlq_p.add_argument("--delete", action="store_true", help="(mongo) delete records once replayed")
 
-    reset_p = subparsers.add_parser("reset", help="Reset all ingested listings and price histories")
+    reset_p = sub.add_parser("reset", help="Reset all ingested listings and price histories")
     reset_p.add_argument("--confirm", action="store_true", help="Confirm database reset")
+    return parser
 
-    args = parser.parse_args()
+
+def main(argv: list[str] | None = None) -> None:
+    args = build_parser().parse_args(argv)
+    configure_runtime()
     if args.command == "crawl":
         asyncio.run(run_crawl(args.site, args.mode))
+    elif args.command == "sync-configs":
+        asyncio.run(run_sync_configs(args.dir, args.dry_run))
     elif args.command == "replay-dlq":
-        asyncio.run(run_replay_dlq(args.source, args.site_id, args.limit))
+        asyncio.run(run_replay_dlq(args.source, args.site_id, args.limit, args.delete))
     elif args.command == "reset":
         asyncio.run(run_reset(args.confirm))
 

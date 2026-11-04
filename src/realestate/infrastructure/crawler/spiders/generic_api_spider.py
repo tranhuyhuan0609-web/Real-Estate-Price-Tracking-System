@@ -5,13 +5,19 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Dict, Optional, Tuple
 from urllib.parse import urlsplit
+
 import httpx
+
 from realestate.application.ports.spider import Spider
 from realestate.domain.entities import ParsedListingItem, RunMode
 from realestate.domain.entities.crawler_config import CrawlerConfig
-from realestate.infrastructure.crawler.parsing.listing_parser import ListingParser, extract_by_json_path
+from realestate.infrastructure.crawler.http_clients import HttpClientPool
+from realestate.infrastructure.crawler.parsing.listing_parser import (
+    ListingParser,
+    extract_by_json_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +38,10 @@ class GenericApiSpider(Spider):
         self.aborted_reason: Optional[str] = None
         self.exhausted: bool = False
         self.semaphore = asyncio.Semaphore(self.rate_cfg.concurrent_requests)
-        self._proxy_index = 0
+        self._clients: HttpClientPool | None = None
 
     async def _send_request_with_retry(
         self,
-        client: httpx.AsyncClient,
         url: str,
         method: str,
         headers: Dict[str, str],
@@ -46,40 +51,20 @@ class GenericApiSpider(Spider):
         retries = self.rate_cfg.retry_times
         timeout = self.rate_cfg.timeout_sec
 
-        proxies = (
-            list(self.config.proxy_settings.proxies)
-            if self.config.proxy_settings and self.config.proxy_settings.enabled and self.config.proxy_settings.proxies
-            else []
-        )
+        assert self._clients is not None, "only called from crawl()"
 
         for attempt in range(1 + retries):
-            # Rotate proxy per retry if proxy list is configured
-            current_proxy = None
-            if proxies:
-                current_proxy = proxies[(self._proxy_index + attempt) % len(proxies)]
-
+            client = self._clients.next()  # advances to the next proxy when rotating
             try:
                 async with self.semaphore:
-                    # If proxy rotation is requested per attempt
-                    if current_proxy and current_proxy != getattr(client, "_current_proxy", None):
-                        async with httpx.AsyncClient(proxy=current_proxy, headers=headers, follow_redirects=True) as rot_client:
-                            response = await rot_client.request(
-                                method=method,
-                                url=url,
-                                headers=headers,
-                                params=params,
-                                json=json_body,
-                                timeout=timeout,
-                            )
-                    else:
-                        response = await client.request(
-                            method=method,
-                            url=url,
-                            headers=headers,
-                            params=params,
-                            json=json_body,
-                            timeout=timeout,
-                        )
+                    response = await client.request(
+                        method=method,
+                        url=url,
+                        headers=headers,
+                        params=params,
+                        json=json_body,
+                        timeout=timeout,
+                    )
 
                 if response.status_code == 200:
                     return response
@@ -124,15 +109,9 @@ class GenericApiSpider(Spider):
         if "User-Agent" not in headers:
             headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) RealEstateBot/1.0"
 
-        proxy_url = None
-        if self.config.proxy_settings and self.config.proxy_settings.enabled and self.config.proxy_settings.proxies:
-            proxy_url = self.config.proxy_settings.proxies[0]
-
-        client_kwargs: dict[str, Any] = {"headers": headers, "follow_redirects": True}
-        if proxy_url:
-            client_kwargs["proxy"] = proxy_url
-
-        async with httpx.AsyncClient(**client_kwargs) as client:
+        async with HttpClientPool(
+            self.config.proxy_settings, headers=headers, follow_redirects=True
+        ) as self._clients:
             current_page = start_page
 
             while self.pages_crawled < max_pages:
@@ -160,7 +139,6 @@ class GenericApiSpider(Spider):
                 request_body = body if self.req_cfg.method == "POST" else None
 
                 response = await self._send_request_with_retry(
-                    client=client,
                     url=str(self.req_cfg.url),
                     method=self.req_cfg.method,
                     headers=headers,
