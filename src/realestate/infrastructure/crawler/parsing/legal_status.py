@@ -6,7 +6,10 @@ import re
 from typing import Optional
 
 LEGAL_STATUS_PATTERNS = [
-    (re.compile(r"(?:sổ\s*đỏ\s*chính\s*chủ|sổ\s*hồng\s*chính\s*chủ)", re.IGNORECASE), "Sổ đỏ/hồng chính chủ"),
+    (
+        re.compile(r"(?:sổ\s*đỏ\s*chính\s*chủ|sổ\s*hồng\s*chính\s*chủ)", re.IGNORECASE),
+        "Sổ đỏ/hồng chính chủ",
+    ),
     (re.compile(r"(?:sổ\s*đỏ|sổ\s*hồng|sổ\s*riêng|sổ\s*vuông\s*đẹp)", re.IGNORECASE), "Sổ đỏ/hồng"),
     (re.compile(r"(?:hợp\s*đồng\s*mua\s*bán|hđmb)", re.IGNORECASE), "Hợp đồng mua bán"),
     (re.compile(r"(?:giấy\s*tờ\s*hợp\s*lệ|pháp\s*lý\s*chuẩn)", re.IGNORECASE), "Pháp lý hợp lệ"),

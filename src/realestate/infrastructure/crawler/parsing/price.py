@@ -7,125 +7,111 @@ from typing import Any, Optional, Tuple
 
 MAX_VALID_PRICE_VND = 5_000_000_000_000  # 5,000 tỷ VNĐ sanity threshold
 
+Price = Tuple[Optional[float], Optional[float]]  # (price_vnd, price_per_m2)
 
-def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Tuple[Optional[float], Optional[float]]:
-    """Parse real estate price from raw float, int or Vietnamese text (e.g. '5.2 tỷ', '850 triệu', '45 tr/m2').
+_NUM = r"([0-9]+(?:[\.,][0-9]+)?)"
+_TY = r"(?:tỷ|ty|tỉ|ti)"
+_TRIEU = r"(?:triệu|trieu|tr)"
+_NGHIN = r"(?:nghìn|ngan|k)"
+_UNITS = {
+    1_000_000_000: ("tỷ", "ty", "tỉ", "ti"),
+    1_000_000: ("triệu", "trieu", "tr"),
+    1_000: ("nghìn", "ngan", "k"),
+}
+# Words after the second number that mean it is not part of the price ("3 tỷ 100 m2").
+_NOT_PRICE_AFTER = r"(?!\s*(?:m[2²]|m\b|mét|ha|sào|phòng|căn|pn|wc)\b)"
+_NEGOTIABLE = ("thỏa thuận", "thoa thuan", "liên hệ", "lien he", "tùy", "đang cập nhật")
 
-    Returns:
-        Tuple[Optional[float], Optional[float]]: (price_vnd, price_per_m2)
+_PER_M2_RE = re.compile(rf"{_NUM}\s*({_TY}|{_TRIEU}|{_NGHIN})\s*/\s*(?:m[2²]|m\b)")
+_RENT_SUFFIX_RE = re.compile(r"/\s*(?:tháng|thang|th|năm|nam)\b")
+_COMPOUNDS = (  # (major unit regex, major multiplier, minor unit regex)
+    (_TY, 1_000_000_000, _TRIEU),
+    (_TRIEU, 1_000_000, _NGHIN),
+)
+_SINGLE_RE = re.compile(rf"{_NUM}\s*(tỷ|ty|tỉ|ti|triệu|trieu|tr|nghìn|ngan|k)\b")
+_ZERO_RE = re.compile(r"^0+(?:[\.,]0+)?\s*(?:đ|d|đồng|dong|vnd|tỷ|triệu|tr)?$")
+
+
+def _num(text: str) -> float:
+    return float(text.replace(",", "."))
+
+
+def _multiplier(unit: str) -> int:
+    return next(mult for mult, names in _UNITS.items() if unit in names)
+
+
+def _result(total: float, area: Optional[float]) -> Price:
+    if total > MAX_VALID_PRICE_VND:
+        return None, None
+    return total, (round(total / area, 0) if area and area > 0 else None)
+
+
+def parse_vietnamese_price(raw: Any, area: Optional[float] = None) -> Price:
+    """Parse a price from a number or Vietnamese text ("5.2 tỷ", "850 triệu", "45 tr/m2").
+
+    ``area`` (m²) is used to derive the other half of the (total, per-m²) pair.
     """
     if raw is None:
         return None, None
     if isinstance(raw, (int, float)):
-        val = float(raw)
-        if val <= 0 or val > MAX_VALID_PRICE_VND:
-            return None, None
-        pm2 = round(val / area, 0) if area and area > 0 else None
-        return val, pm2
+        return (None, None) if raw <= 0 else _result(float(raw), area)
 
     text = str(raw).strip().lower()
-    if not text or any(k in text for k in ["thỏa thuận", "thoa thuan", "liên hệ", "lien he", "tùy", "đang cập nhật"]):
-        return None, None
-    if re.match(r"^0+(?:[\.,]0+)?\s*(?:đ|d|đồng|dong|vnd|tỷ|triệu|tr)?$", text):
+    if not text or any(k in text for k in _NEGOTIABLE) or _ZERO_RE.match(text):
         return None, None
 
-    # 1. Price per m2: e.g. "45 triệu/m2" or "45 tr/m2" or "1.5 tỷ/m2" or "48tr/m"
-    m_per_m2 = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(tỷ|ty|tỉ|ti|triệu|trieu|tr|nghìn|ngan|k)\s*/\s*(?:m[2²]|m\b)", text)
-    if m_per_m2:
-        num = float(m_per_m2.group(1).replace(",", "."))
-        unit = m_per_m2.group(2)
-        if any(c in unit for c in ["tỷ", "ty", "tỉ", "ti"]):
-            mult = 1_000_000_000
-        elif any(c in unit for c in ["triệu", "trieu", "tr"]):
-            mult = 1_000_000
-        else:
-            mult = 1_000
-        price_m2 = num * mult
-        price_vnd = round(price_m2 * area) if area and area > 0 else None
-        if price_vnd and price_vnd > MAX_VALID_PRICE_VND:
-            return None, None
-        return price_vnd, price_m2
-
-    # Clean rental suffixes e.g. '/tháng', '/th', '/năm'
-    text = re.sub(r"/\s*(?:tháng|thang|th|năm|nam)\b", "", text)
-
-    # 2. Compound price:
-    # 2a. Tỷ + Triệu (e.g. "1 tỷ 250 triệu", "2 tỷ 100", "2 tỷ 5", "1 tỷ 25 triệu")
-    # Negative lookahead ensures that an adjacent area (e.g. "3 tỷ 100 m2") is not mistakenly parsed as millions
-    m_ty_tr = re.search(
-        r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:tỷ|ty|tỉ|ti)\s*"
-        r"([0-9]+(?:[\.,][0-9]+)?)\b"
-        r"(?:(?!\s*(?:m[2²]|m\b|mét|ha|sào|phòng|căn|pn|wc)\b)\s*(triệu|trieu|tr)?)",
-        text,
-    )
-    if m_ty_tr:
-        ty = float(m_ty_tr.group(1).replace(",", "."))
-        tr_raw = float(m_ty_tr.group(2).replace(",", "."))
-        has_unit = bool(m_ty_tr.group(3))
-        if has_unit:
-            tr = tr_raw * 1_000_000
-        else:
-            if tr_raw < 10 and "." not in m_ty_tr.group(2):
-                tr = tr_raw * 100_000_000
-            elif tr_raw < 100 and "." not in m_ty_tr.group(2):
-                tr = tr_raw * 10_000_000
-            else:
-                tr = tr_raw * 1_000_000
-        total = ty * 1_000_000_000 + tr
-        if total > MAX_VALID_PRICE_VND:
-            return None, None
-        pm2 = round(total / area, 0) if area and area > 0 else None
-        return total, pm2
-
-    # 2b. Triệu + Nghìn (e.g. "2 triệu 500 nghìn", "2 triệu 50 nghìn", "2 triệu 5")
-    m_tr_k = re.search(
-        r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:triệu|trieu|tr)\s*"
-        r"([0-9]+(?:[\.,][0-9]+)?)\b"
-        r"(?:(?!\s*(?:m[2²]|m\b|mét|ha|sào|phòng|căn|pn|wc)\b)\s*(nghìn|ngan|k)?)",
-        text,
-    )
-    if m_tr_k:
-        tr = float(m_tr_k.group(1).replace(",", "."))
-        k_raw = float(m_tr_k.group(2).replace(",", "."))
-        has_unit = bool(m_tr_k.group(3))
-        if has_unit:
-            k = k_raw * 1_000
-        else:
-            if k_raw < 10 and "." not in m_tr_k.group(2):
-                k = k_raw * 100_000
-            elif k_raw < 100 and "." not in m_tr_k.group(2):
-                k = k_raw * 10_000
-            else:
-                k = k_raw * 1_000
-        total = tr * 1_000_000 + k
-        if total > MAX_VALID_PRICE_VND:
-            return None, None
-        pm2 = round(total / area, 0) if area and area > 0 else None
-        return total, pm2
-
-    # 3. Single unit: "5,2 tỷ", "850 triệu", "500 k"
-    m_single = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(tỷ|ty|tỉ|ti|triệu|trieu|tr|nghìn|ngan|k)\b", text)
-    if m_single:
-        num = float(m_single.group(1).replace(",", "."))
-        unit = m_single.group(2)
-        if unit in ("tỷ", "ty", "tỉ", "ti"):
-            total = num * 1_000_000_000
-        elif unit in ("triệu", "trieu", "tr"):
-            total = num * 1_000_000
-        else:
-            total = num * 1_000
-        if total > MAX_VALID_PRICE_VND:
-            return None, None
-        pm2 = round(total / area, 0) if area and area > 0 else None
-        return total, pm2
-
-    # 4. Pure digits: "2500000000"
-    clean_digits = re.sub(r"[^\d]", "", text)
-    if clean_digits and len(clean_digits) >= 6:
-        val = float(clean_digits)
-        if val > MAX_VALID_PRICE_VND:
-            return None, None
-        pm2 = round(val / area, 0) if area and area > 0 else None
-        return val, pm2
-
+    for parse in (_per_m2, _compound, _single, _digits):
+        result = parse(text, area)
+        if result is not None:
+            return result
     return None, None
+
+
+def _per_m2(text: str, area: Optional[float]) -> Optional[Price]:
+    """ "45 triệu/m2", "1.5 tỷ/m2", "48tr/m" """
+    m = _PER_M2_RE.search(text)
+    if not m:
+        return None
+    price_m2 = _num(m.group(1)) * _multiplier(m.group(2))
+    total = round(price_m2 * area) if area and area > 0 else None
+    if total and total > MAX_VALID_PRICE_VND:
+        return None, None
+    return total, price_m2
+
+
+def _compound(text: str, area: Optional[float]) -> Optional[Price]:
+    """ "1 tỷ 250 triệu", "2 tỷ 5" (= 2.5 tỷ), "2 triệu 500 nghìn".
+
+    Without a minor unit the second number is read like a decimal: "2 tỷ 5" -> 500 triệu,
+    "2 tỷ 25" -> 250 triệu, "2 tỷ 250" -> 250 triệu.
+    """
+    text = _RENT_SUFFIX_RE.sub("", text)
+    for major_re, major, minor_re in _COMPOUNDS:
+        m = re.search(
+            rf"{_NUM}\s*{major_re}\s*{_NUM}\b(?:{_NOT_PRICE_AFTER}\s*({minor_re})?)", text
+        )
+        if not m:
+            continue
+        minor_raw, minor_text = _num(m.group(2)), m.group(2)
+        if m.group(3) or "." in minor_text:
+            minor = minor_raw * (major // 1000)
+        elif minor_raw < 10:
+            minor = minor_raw * (major // 10)
+        elif minor_raw < 100:
+            minor = minor_raw * (major // 100)
+        else:
+            minor = minor_raw * (major // 1000)
+        return _result(_num(m.group(1)) * major + minor, area)
+    return None
+
+
+def _single(text: str, area: Optional[float]) -> Optional[Price]:
+    """ "5,2 tỷ", "850 triệu", "500 k" """
+    m = _SINGLE_RE.search(_RENT_SUFFIX_RE.sub("", text))
+    return _result(_num(m.group(1)) * _multiplier(m.group(2)), area) if m else None
+
+
+def _digits(text: str, area: Optional[float]) -> Optional[Price]:
+    """ "2500000000", "2.500.000.000 đ" """
+    digits = re.sub(r"[^\d]", "", _RENT_SUFFIX_RE.sub("", text))
+    return _result(float(digits), area) if len(digits) >= 6 else None

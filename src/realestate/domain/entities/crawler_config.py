@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import string
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -15,9 +16,8 @@ SITE_ID_RE = re.compile(r"[a-z0-9_-]{1,20}")
 SCHEDULE_TIME_RE = re.compile(r"(?P<h>[01]?\d|2[0-3]):(?P<m>[0-5]\d)")
 HOST_LABEL_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 # Dotted path with optional list indexes: "oldDistrict.translation[0].name".
-JSON_PATH_RE = re.compile(
-    r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*|\[\d+\])*"
-)
+JSON_PATH_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*|\[\d+\])*")
+URL_TEMPLATE_FIELDS = frozenset({"external_id", "external_code"})
 ALLOWED_PROXY_SCHEMES = frozenset({"http", "https", "socks5"})
 
 RunMode = Literal["incremental", "full_sweep"]
@@ -58,6 +58,8 @@ MAPPABLE_FIELDS = frozenset(
         "advertiser_email",
         "advertiser_kind",
         "advertiser_is_verified",
+        "address",
+        "breadcrumb",
     }
 )
 REQUIRED_MAPPED_FIELDS = frozenset({"url", "title"})
@@ -130,9 +132,7 @@ class PaginationSettings(StrictBaseModel):
     @model_validator(mode="after")
     def validate_budgets(self) -> PaginationSettings:
         if self.max_pages_full_sweep < self.max_pages_incremental:
-            raise ValueError(
-                "max_pages_full_sweep must be >= max_pages_incremental."
-            )
+            raise ValueError("max_pages_full_sweep must be >= max_pages_incremental.")
         return self
 
 
@@ -156,6 +156,29 @@ class ResponseMapping(StrictBaseModel):
     items_path: NonBlank
     fields: dict[str, str]
     value_mappings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    url_template: str | None = Field(
+        default=None,
+        description=(
+            "Listing URL built when the item has no URL field, e.g. "
+            "'https://www.nhatot.com/{external_id}.htm'. Placeholders: "
+            + ", ".join(sorted(URL_TEMPLATE_FIELDS))
+            + "."
+        ),
+    )
+
+    @field_validator("url_template")
+    @classmethod
+    def validate_url_template(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        names = {name for _, name, _, _ in string.Formatter().parse(value) if name is not None}
+        if not names or not names <= URL_TEMPLATE_FIELDS:
+            raise ValueError(
+                f"url_template must use at least one of {sorted(URL_TEMPLATE_FIELDS)} and nothing else."
+            )
+        if urlsplit(value.format(**dict.fromkeys(names, "1"))).scheme not in {"http", "https"}:
+            raise ValueError("url_template must be an absolute http(s) URL.")
+        return value
 
     @model_validator(mode="after")
     def validate_mapping(self) -> ResponseMapping:
@@ -168,15 +191,12 @@ class ResponseMapping(StrictBaseModel):
             raise ValueError(f"Missing required mapped fields: {sorted(missing)}.")
         if not ({"external_code", "external_id"} & self.fields.keys()):
             raise ValueError(
-                "Map at least one of external_code or external_id "
-                "(needed to build listing_key)."
+                "Map at least one of external_code or external_id (needed to build listing_key)."
             )
 
         for name, mapping in self.value_mappings.items():
             if name not in self.fields:
-                raise ValueError(
-                    f"value_mappings[{name!r}] has no matching entry in fields."
-                )
+                raise ValueError(f"value_mappings[{name!r}] has no matching entry in fields.")
             allowed = ENUM_VALUES.get(name)
             if allowed is None:
                 continue
@@ -259,6 +279,13 @@ class DetailPageSettings(StrictBaseModel):
     url_field: str = "url"
     fields: dict[str, str] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def validate_detail_fields(self) -> DetailPageSettings:
+        unknown = self.fields.keys() - MAPPABLE_FIELDS
+        if unknown:
+            raise ValueError(f"Unknown detail page mapped fields: {sorted(unknown)}.")
+        return self
+
 
 class CrawlerConfig(StrictBaseModel):
     """Validated configuration for one crawl source.
@@ -268,6 +295,14 @@ class CrawlerConfig(StrictBaseModel):
     """
 
     site_id: NonBlank
+    portal: str | None = Field(
+        default=None,
+        description=(
+            "Portal whose listing-ID space this feed crawls. Feeds of the same portal "
+            "(e.g. mogi and mogi_apartment) share listing keys, so one ad seen by both is "
+            "one listing. Defaults to site_id."
+        ),
+    )
     name: NonBlank = Field(max_length=100)
     enabled: bool = True
     crawler_type: Literal["rest_api", "html"] = "rest_api"
@@ -295,7 +330,32 @@ class CrawlerConfig(StrictBaseModel):
     )
     parser_version: NonBlank = "2.0.0"
     proxy_settings: ProxySettings = Field(default_factory=ProxySettings)
-    source_timezone: str = "UTC"
+    source_timezone: str = Field(
+        default="UTC",
+        description="Timezone of schedule_times (when the crawler runs).",
+    )
+    content_timezone: str = Field(
+        default="Asia/Ho_Chi_Minh",
+        description=(
+            "Timezone of dates shown by the site (e.g. 'Ngày đăng 04/11/2026'). Independent of "
+            "source_timezone so moving the crawl schedule never shifts parsed dates."
+        ),
+    )
+
+    @property
+    def portal_id(self) -> str:
+        """Prefix of listing keys and value of listings.source."""
+        return self.portal or self.site_id
+
+    @field_validator("portal")
+    @classmethod
+    def validate_portal(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.lower()
+        if not SITE_ID_RE.fullmatch(value):
+            raise ValueError("portal must follow the site_id format.")
+        return value
 
     @field_validator("site_id")
     @classmethod
@@ -303,8 +363,7 @@ class CrawlerConfig(StrictBaseModel):
         value = value.lower()
         if not SITE_ID_RE.fullmatch(value):
             raise ValueError(
-                "site_id must be 1-20 characters of a-z, 0-9, underscores, "
-                "and hyphens."
+                "site_id must be 1-20 characters of a-z, 0-9, underscores, and hyphens."
             )
         return value
 
@@ -320,23 +379,21 @@ class CrawlerConfig(StrictBaseModel):
         for value in values:
             match = SCHEDULE_TIME_RE.fullmatch(value.strip())
             if match is None:
-                raise ValueError(
-                    f"Invalid schedule time {value!r}; use 'HH:MM' (00:00-23:59)."
-                )
+                raise ValueError(f"Invalid schedule time {value!r}; use 'HH:MM' (00:00-23:59).")
             normalized.append(f"{int(match['h']):02d}:{match['m']}")
 
         if len(normalized) != len(set(normalized)):
             raise ValueError("Duplicate schedule_times are not allowed.")
         return sorted(normalized)
 
-    @field_validator("source_timezone")
+    @field_validator("source_timezone", "content_timezone")
     @classmethod
-    def validate_source_timezone(cls, value: str) -> str:
+    def validate_timezone(cls, value: str) -> str:
         value = value.strip()
         try:
             ZoneInfo(value)
         except (ZoneInfoNotFoundError, ValueError, OSError):
-            raise ValueError(f"Invalid source timezone: {value!r}") from None
+            raise ValueError(f"Invalid timezone: {value!r}") from None
         return value
 
     @field_validator("allowed_domains")
@@ -345,9 +402,7 @@ class CrawlerConfig(StrictBaseModel):
         normalized: list[str] = []
         for value in values:
             domain = value.strip().lower().rstrip(".")
-            if not domain or not all(
-                HOST_LABEL_RE.fullmatch(label) for label in domain.split(".")
-            ):
+            if not domain or not all(HOST_LABEL_RE.fullmatch(label) for label in domain.split(".")):
                 raise ValueError(
                     f"Invalid hostname: {value!r}. Use a plain ASCII hostname "
                     "without scheme, path, or port; convert IDNs to punycode."
@@ -369,10 +424,7 @@ class CrawlerConfig(StrictBaseModel):
 
     @model_validator(mode="after")
     def validate_pagination_location(self) -> CrawlerConfig:
-        if (
-            self.pagination.param_location == "body"
-            and self.request.method != "POST"
-        ):
+        if self.pagination.param_location == "body" and self.request.method != "POST":
             raise ValueError("pagination.param_location='body' requires method='POST'.")
         return self
 
@@ -439,3 +491,5 @@ class CrawlerConfig(StrictBaseModel):
     def source_zoneinfo(self) -> ZoneInfo:
         return ZoneInfo(self.source_timezone)
 
+    def content_zoneinfo(self) -> ZoneInfo:
+        return ZoneInfo(self.content_timezone)

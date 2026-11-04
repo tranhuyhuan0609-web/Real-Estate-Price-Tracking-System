@@ -28,4 +28,3 @@ class StoreBronzeUseCase:
     async def process_event(self, event: RawEventMessage) -> None:
         """Process a single event into Bronze layer."""
         await self.bronze_repo.bulk_upsert_raw_events([event])
-

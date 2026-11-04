@@ -22,7 +22,9 @@ def init_mongo_indexes(mongo_uri: str, db_name: str) -> None:
         db = client[db_name]
         collection = db["raw_listings"]
 
-        collection.create_index([("listing_key", ASCENDING)], unique=True, name="idx_raw_listing_key")
+        collection.create_index(
+            [("listing_key", ASCENDING)], unique=True, name="idx_raw_listing_key"
+        )
         collection.create_index([("crawl_run_ids", ASCENDING)], name="idx_raw_crawl_run_ids")
         collection.create_index([("last_scraped_at", DESCENDING)], name="idx_raw_last_scraped_at")
 

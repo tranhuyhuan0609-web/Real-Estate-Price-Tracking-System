@@ -15,19 +15,21 @@ x-app: &app
 
 x-log-env: &log-env
   CRAWLER_LOG_LEVEL: ${CRAWLER_LOG_LEVEL:-INFO}
+  METRICS_PORT: "9100"  # container-internal; scraped by the `monitoring` profile
+  HEARTBEAT_DIR: /tmp
 
 x-postgres-env: &postgres-env
   POSTGRES_HOST: postgres
   POSTGRES_PORT: "5432"
   POSTGRES_USER: ${POSTGRES_USER:-postgres_user}
-  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_password}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
   POSTGRES_DB: ${POSTGRES_DB:-realestate_db}
 
 x-mongo-env: &mongo-env
   MONGO_HOST: mongo
   MONGO_PORT: "27017"
   MONGO_USER: ${MONGO_USER:-mongo_user}
-  MONGO_PASSWORD: ${MONGO_PASSWORD:-mongo_secure_password}
+  MONGO_PASSWORD: ${MONGO_PASSWORD:?set MONGO_PASSWORD in .env}
   MONGO_DB: ${MONGO_DB:-realestate_raw}
 
 x-kafka-env: &kafka-env
@@ -37,6 +39,10 @@ x-kafka-env: &kafka-env
   KAFKA_GROUP_RAW_WRITER: ${KAFKA_GROUP_RAW_WRITER:-bds_bronze_mongo_group}
   KAFKA_GROUP_CLEAN_PROCESSOR: ${KAFKA_GROUP_CLEAN_PROCESSOR:-bds_silver_gold_pg_group}
   KAFKA_GROUP_DLQ_WRITER: ${KAFKA_GROUP_DLQ_WRITER:-bds_dlq_writer_group}
+  KAFKA_SECURITY_PROTOCOL: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
+  KAFKA_SASL_MECHANISM: ${KAFKA_SASL_MECHANISM:-SCRAM-SHA-512}
+  KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:-}
+  KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD:-}
 
 services:
   # ------------------------------------------------------------------ infrastructure
@@ -117,7 +123,7 @@ services:
           memory: 1G
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-mongo_user}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-mongo_secure_password}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?set MONGO_PASSWORD in .env}
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -139,7 +145,7 @@ services:
           memory: 1.5G
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-realestate_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -153,13 +159,25 @@ services:
       start_period: 10s
 
   # ------------------------------------------------------------------ one-shot jobs
+  migrate:
+    # Brings an existing volume to the latest migration. A fresh volume is already at head
+    # (sql/init.sql is rendered from migrations and stamps alembic_version), so this is a no-op.
+    <<: *app
+    restart: "no"
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: [*postgres-env]
+
   config-sync:
     <<: *app
     restart: "no"
     command: ["python", "-m", "realestate.entrypoints.cli", "sync-configs"]
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - ../configs/sites:/app/configs/sites:ro
     environment:
@@ -168,7 +186,15 @@ services:
   # ------------------------------------------------------------------ application
   crawler-scheduler:
     <<: *app
+    healthcheck:
+      test: ["CMD", "python", "-m", "realestate.entrypoints.healthcheck", "scheduler", "--max-age", "120"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     command: ["python", "-m", "realestate.entrypoints.scheduler"]
+    volumes:
+      - ${BACKUP_HOST_DIR:-../backups}:/backups:ro  # only to export backup age as a metric
     depends_on:
       config-sync:
         condition: service_completed_successfully
@@ -176,9 +202,16 @@ services:
         condition: service_completed_successfully
     environment:
       <<: [*log-env, *postgres-env, *kafka-env]
+      BACKUP_DIR: /backups
 
   bronze-worker:
     <<: *app
+    healthcheck:
+      test: ["CMD", "python", "-m", "realestate.entrypoints.healthcheck", "bronze", "--max-age", "120"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     command: ["python", "-m", "realestate.entrypoints.bronze_worker"]
     deploy:
       replicas: 2
@@ -192,6 +225,12 @@ services:
 
   silver-gold-worker:
     <<: *app
+    healthcheck:
+      test: ["CMD", "python", "-m", "realestate.entrypoints.healthcheck", "silver_gold", "--max-age", "120"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     command: ["python", "-m", "realestate.entrypoints.silver_gold_worker"]
     deploy:
       replicas: 2
@@ -205,6 +244,12 @@ services:
 
   dlq-worker:
     <<: *app
+    healthcheck:
+      test: ["CMD", "python", "-m", "realestate.entrypoints.healthcheck", "dlq", "--max-age", "120"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     command: ["python", "-m", "realestate.entrypoints.dlq_worker"]
     depends_on:
       mongo:
@@ -214,7 +259,70 @@ services:
     environment:
       <<: [*log-env, *mongo-env, *kafka-env]
 
+  # ------------------------------------------------------------------ backups
+  # Daily dumps to ./backups on the host (kept BACKUP_KEEP_DAYS days). Run one now:
+  #   dc run --rm pg-backup once      /      dc run --rm mongo-backup once
+  pg-backup:
+    image: postgis/postgis:16-3.4-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/backup.sh", "postgres"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: [*postgres-env]
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+    volumes:
+      - ./backup/backup.sh:/backup.sh:ro
+      - ${BACKUP_HOST_DIR:-../backups}:/backups
+
+  mongo-backup:
+    image: mongo:7.0
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/backup.sh", "mongo"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      <<: [*mongo-env]
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+    volumes:
+      - ./backup/backup.sh:/backup.sh:ro
+      - ${BACKUP_HOST_DIR:-../backups}:/backups
+
+  # ------------------------------------------------------------------ monitoring (opt-in)
+  # docker compose --profile monitoring ... up -d   ->   http://localhost:16104 (Prometheus)
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    depends_on: [alertmanager]
+    ports:
+      - 127.0.0.1:${PROMETHEUS_HOST_PORT:-16104}:9090
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/etc/alertmanager/alertmanager-entrypoint.sh"]
+    ports:
+      - 127.0.0.1:${ALERTMANAGER_HOST_PORT:-16105}:9093
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - ./monitoring:/etc/alertmanager:ro
+      - alertmanager_data:/alertmanager
+
 volumes:
+  alertmanager_data:
+  prometheus_data:
   kafka_data:
   mongo_data:
   postgres_data:

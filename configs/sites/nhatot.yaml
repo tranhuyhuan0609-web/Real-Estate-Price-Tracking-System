@@ -39,6 +39,7 @@ rate_limit:
   retry_times: 3
 response_mapping:
   items_path: ads
+  url_template: https://www.nhatot.com/{external_id}.htm  # when share_url is missing
   fields:
     external_id: list_id
     url: share_url

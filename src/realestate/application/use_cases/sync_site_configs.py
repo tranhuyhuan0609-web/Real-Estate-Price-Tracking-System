@@ -30,7 +30,9 @@ class SyncSiteConfigsUseCase:
     def __init__(self, config_repo: ConfigRepository) -> None:
         self._repo = config_repo
 
-    async def execute(self, configs: Iterable[CrawlerConfig], *, dry_run: bool = False) -> SyncReport:
+    async def execute(
+        self, configs: Iterable[CrawlerConfig], *, dry_run: bool = False
+    ) -> SyncReport:
         report = SyncReport()
         for config in configs:
             try:

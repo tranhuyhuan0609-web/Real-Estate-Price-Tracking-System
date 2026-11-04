@@ -65,7 +65,7 @@ def decode_cloudflare_email(cf_hex: Optional[str]) -> Optional[str]:
         return None
     try:
         key = int(raw[:2], 16)
-        chars = [chr(int(raw[i:i + 2], 16) ^ key) for i in range(2, len(raw), 2)]
+        chars = [chr(int(raw[i : i + 2], 16) ^ key) for i in range(2, len(raw), 2)]
         email = "".join(chars).strip().lower()
         if re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
             return email
@@ -105,7 +105,11 @@ def clean_email(raw_email: Optional[str]) -> Optional[str]:
     text = re.sub(r"^(?:chatpostinfo_|pj_)", "", text, flags=re.IGNORECASE)
 
     # Check for Cafeland/Mogi avatar filename containing email (e.g. /avatar/name@gmail.com-timestamp.jpg)
-    m_avatar = re.search(r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9]+(?:\.[a-zA-Z0-9]+)*\.(?:com\.vn|com|vn|net|org|edu|gov|io|info|biz|me))\b", text, re.IGNORECASE)
+    m_avatar = re.search(
+        r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9]+(?:\.[a-zA-Z0-9]+)*\.(?:com\.vn|com|vn|net|org|edu|gov|io|info|biz|me))\b",
+        text,
+        re.IGNORECASE,
+    )
     if m_avatar:
         text = m_avatar.group(1)
 

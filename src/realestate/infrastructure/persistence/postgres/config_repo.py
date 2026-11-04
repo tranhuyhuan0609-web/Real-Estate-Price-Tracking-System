@@ -42,9 +42,7 @@ class PostgresConfigRepository(ConfigRepository):
         if not isinstance(table_name, str) or not table_name.strip():
             raise ValueError("Table name must be a non-empty string.")
 
-        if schema is not None and (
-            not isinstance(schema, str) or not schema.strip()
-        ):
+        if schema is not None and (not isinstance(schema, str) or not schema.strip()):
             raise ValueError("Schema must be a non-empty string or None.")
 
         if (
@@ -67,17 +65,16 @@ class PostgresConfigRepository(ConfigRepository):
 
         select_list = sql.SQL(", ").join(sql.Identifier(c) for c in _SELECT_COLUMNS)
 
-        self._q_get = sql.SQL(
-            "SELECT {cols} FROM {table} WHERE site_id = %s"
-        ).format(cols=select_list, table=table)
+        self._q_get = sql.SQL("SELECT {cols} FROM {table} WHERE site_id = %s").format(
+            cols=select_list, table=table
+        )
 
         self._q_get_enabled = sql.SQL(
             "SELECT {cols} FROM {table} WHERE enabled = TRUE ORDER BY site_id"
         ).format(cols=select_list, table=table)
 
         self._q_insert = sql.SQL(
-            "INSERT INTO {table} ({cols}) VALUES ({marks}) "
-            "ON CONFLICT (site_id) DO NOTHING"
+            "INSERT INTO {table} ({cols}) VALUES ({marks}) ON CONFLICT (site_id) DO NOTHING"
         ).format(
             table=table,
             cols=sql.SQL(", ").join(sql.Identifier(c) for c in _SELECT_COLUMNS),
@@ -88,8 +85,7 @@ class PostgresConfigRepository(ConfigRepository):
             sql.SQL("{} = %s").format(sql.Identifier(c)) for c in _WRITE_COLUMNS
         )
         self._q_update = sql.SQL(
-            "UPDATE {table} SET {assignments}, updated_at = NOW() "
-            "WHERE site_id = %s"
+            "UPDATE {table} SET {assignments}, updated_at = NOW() WHERE site_id = %s"
         ).format(table=table, assignments=assignments)
 
         self._q_delete = sql.SQL("DELETE FROM {} WHERE site_id = %s").format(table)
@@ -111,9 +107,7 @@ class PostgresConfigRepository(ConfigRepository):
     @staticmethod
     def _values(config: CrawlerConfig, columns: tuple[str, ...]) -> list[Any]:
         row = config_to_row(config)
-        return [
-            Jsonb(row[c]) if c == "config_json" else row[c] for c in columns
-        ]
+        return [Jsonb(row[c]) if c == "config_json" else row[c] for c in columns]
 
     @staticmethod
     def _not_found(site_id: str) -> ConfigNotFoundError:

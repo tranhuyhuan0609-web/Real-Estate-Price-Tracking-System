@@ -16,9 +16,7 @@ def test_code_may_be_a_string():
 
 @pytest.mark.parametrize("code", [None, "", "  ", 0, -5, True, "a b"])
 def test_falls_back_to_id_when_code_unusable(code):
-    key = build_listing_key(
-        "meeyland", external_code=code, external_id="6a86b17834e5de3cc593accf"
-    )
+    key = build_listing_key("meeyland", external_code=code, external_id="6a86b17834e5de3cc593accf")
     assert key == "meeyland_6a86b17834e5de3cc593accf"
 
 

@@ -13,8 +13,7 @@ class CrawlRunRepository(Protocol):
         crawl_run_id: str,
         site_id: str,
         run_mode: str = "incremental",
-    ) -> Dict[str, Any]:
-        ...
+    ) -> Dict[str, Any]: ...
 
     async def update_metrics(
         self,
@@ -22,26 +21,21 @@ class CrawlRunRepository(Protocol):
         *,
         items_scraped: int = 0,
         pages_crawled: int = 0,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     async def complete_run(
         self,
         crawl_run_id: str,
         status: str = "completed",
         error_message: Optional[str] = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     async def abort_stale_runs(
         self,
         site_id: str,
         max_age_minutes: int = 60,
-    ) -> int:
-        ...
+    ) -> int: ...
 
-    async def get_schedule_states(self) -> Dict[str, SiteRunState]:
-        ...
+    async def get_schedule_states(self) -> Dict[str, SiteRunState]: ...
 
-    async def fail_interrupted_runs(self, max_age_minutes: int = 60) -> int:
-        ...
+    async def fail_interrupted_runs(self, max_age_minutes: int = 60) -> int: ...

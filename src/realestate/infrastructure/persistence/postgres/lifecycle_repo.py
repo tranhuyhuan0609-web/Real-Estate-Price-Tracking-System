@@ -56,27 +56,34 @@ class PgLifecycleRepository(LifecycleRepository):
         async with self.pool.connection() as conn:
             async with conn.transaction():
                 async with conn.cursor() as cur:
-                    # 1. Increment missing_count for listings not seen in this sweep
+                    # 1. A listing is missing when this feed has seen it before and no feed of
+                    #    its portal has seen it since the sweep started (ADR 0005). Joining on
+                    #    listing_feeds keeps e.g. a mogi_apartment sweep from counting houses
+                    #    that only the mogi feed lists.
                     increment_query = """
-                        UPDATE listings
-                        SET missing_count = missing_count + 1
-                        WHERE source = %s
-                          AND status = 'active'
-                          AND last_seen_at < %s;
+                        UPDATE listings l
+                        SET missing_count = l.missing_count + 1
+                        FROM listing_feeds f
+                        WHERE f.listing_key = l.listing_key
+                          AND f.site_id = %(feed)s
+                          AND l.status = 'active'
+                          AND l.last_seen_at < %(started)s;
                     """
-                    await cur.execute(increment_query, (site_id, started_at))
+                    await cur.execute(increment_query, {"feed": site_id, "started": started_at})
                     incremented_count = cur.rowcount
 
-                    # 2. Mark listings with missing_count >= max_missing_count as expired
+                    # 2. Expire listings of this feed that reached the missing threshold
                     expire_query = """
-                        UPDATE listings
+                        UPDATE listings l
                         SET status = 'expired',
                             ended_at = NOW()
-                        WHERE source = %s
-                          AND status = 'active'
-                          AND missing_count >= %s;
+                        FROM listing_feeds f
+                        WHERE f.listing_key = l.listing_key
+                          AND f.site_id = %(feed)s
+                          AND l.status = 'active'
+                          AND l.missing_count >= %(max)s;
                     """
-                    await cur.execute(expire_query, (site_id, max_missing_count))
+                    await cur.execute(expire_query, {"feed": site_id, "max": max_missing_count})
                     expired_count = cur.rowcount
 
                     # 3. Mark lifecycle_applied_at
@@ -87,15 +94,28 @@ class PgLifecycleRepository(LifecycleRepository):
 
                     return {"incremented": incremented_count, "expired": expired_count}
 
+    async def ensure_history_partitions(self, months_ahead: int = 2) -> int:
+        """Create monthly listing_price_history partitions up to ``months_ahead`` (migration 003)."""
+        async with self.pool.connection() as conn:
+            cur = await conn.execute("SELECT ensure_price_history_partitions(%s)", (months_ahead,))
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
+
     async def refresh_gold_views(self) -> None:
         """Refresh analytical materialized views in PostgreSQL concurrently without locking."""
         async with self.pool.connection() as conn:
             await conn.set_autocommit(True)
             async with conn.cursor() as cur:
                 try:
-                    await cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_ward_avg_price_per_m2;")
-                    await cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_steep_price_drops_7d;")
-                    logger.info("Successfully refreshed Gold Layer materialized views concurrently.")
+                    await cur.execute(
+                        "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_ward_avg_price_per_m2;"
+                    )
+                    await cur.execute(
+                        "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_steep_price_drops_7d;"
+                    )
+                    logger.info(
+                        "Successfully refreshed Gold Layer materialized views concurrently."
+                    )
                 except Exception as exc:
                     logger.error("Failed to refresh materialized views concurrently: %s", exc)
                     raise

@@ -46,3 +46,36 @@ async def test_no_proxy_is_a_single_direct_client(fake_httpx):
 def test_pool_must_be_entered():
     with pytest.raises(RuntimeError):
         HttpClientPool(None).next()
+
+
+async def test_proxy_cooldown_skips_failed_proxy(fake_httpx):
+    settings = ProxySettings(
+        enabled=True, rotation_enabled=True, proxies=P, max_failures=2, cooldown_seconds=60
+    )
+    async with HttpClientPool(settings) as pool:
+        c0 = pool.next()
+        assert c0.proxy == P[0]
+        # Fail c0 twice to trigger cooldown
+        pool.record_failure(c0)
+        pool.record_failure(c0)
+
+        # Subsequent next() calls should rotate only between P[1] and P[2]
+        used = [pool.next().proxy for _ in range(4)]
+        assert used == [P[1], P[2], P[1], P[2]]
+        assert P[0] not in used
+
+
+async def test_proxy_success_resets_failure_counter(fake_httpx):
+    settings = ProxySettings(
+        enabled=True, rotation_enabled=True, proxies=P, max_failures=2, cooldown_seconds=60
+    )
+    async with HttpClientPool(settings) as pool:
+        c0 = pool.next()
+        pool.record_failure(c0)
+        pool.record_success(c0)
+        pool.record_failure(c0)  # Only 1 failure now, not cooled down yet
+
+        pool.next()
+        pool.next()
+        c0_again = pool.next()
+        assert c0_again.proxy == P[0]

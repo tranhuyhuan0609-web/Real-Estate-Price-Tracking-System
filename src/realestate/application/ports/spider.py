@@ -17,4 +17,3 @@ class Spider(Protocol):
     ) -> AsyncIterator[Tuple[ParsedListingItem, Dict[str, Any]]]:
         """Yield (parsed item, raw payload) pairs. Implementations are ``async def`` generators."""
         ...
-

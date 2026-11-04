@@ -1,0 +1,20 @@
+# Rendered by alertmanager-entrypoint.sh: __TELEGRAM_CHAT_ID__ comes from .env, the bot token is
+# written to a file so it never appears in this config or in `ps`.
+route:
+  receiver: telegram
+  group_by: [alertname, site, consumer]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: telegram
+    telegram_configs:
+      - bot_token_file: /tmp/telegram_bot_token
+        chat_id: __TELEGRAM_CHAT_ID__
+        parse_mode: HTML
+        send_resolved: true
+        message: '{{ template "realestate.telegram" . }}'
+
+templates:
+  - /etc/alertmanager/telegram.tmpl

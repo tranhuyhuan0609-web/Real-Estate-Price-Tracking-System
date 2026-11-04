@@ -3,11 +3,13 @@ from __future__ import annotations
 
 class ListingKeyError(ValueError):
     """Raised when a listing key cannot be built."""
+
     pass
 
 
 class ListingKey(str):
     """Value object representing a unique canonical listing key."""
+
     pass
 
 

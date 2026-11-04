@@ -4,7 +4,7 @@ Hệ thống thu thập dữ liệu bất động sản phân tán, theo kiến 
 
 - **Kafka** tách spider (producer) khỏi các worker lưu trữ (consumer).
 - **Bronze – MongoDB**: payload gốc (`raw_listings`) + kho DLQ (`dlq_events`).
-- **Silver – PostgreSQL/PostGIS**: `listings`, `listing_details`, `advertisers` đã chuẩn hoá, dedup bằng fingerprint.
+- **Silver – PostgreSQL/PostGIS**: `listings`, `listing_details`, `advertisers` đã chuẩn hoá. Mỗi tin có `property_fingerprint` (hash tiêu đề + diện tích + địa bàn) để phân tích tin trùng giữa các sàn. Hệ thống không tự gộp tin.
 - **Gold – PostgreSQL**: `listing_price_history` + materialized views `mv_ward_avg_price_per_m2`, `mv_steep_price_drops_7d`.
 - **Hexagonal architecture**: `domain` ← `application` ← `infrastructure` ← `entrypoints` (được kiểm tra bằng `tests/contract/test_layering.py`).
 - **Cấu hình site khai báo**: mỗi sàn là một file `configs/sites/<site_id>.yaml` — thêm sàn mới không cần sửa code.
@@ -23,7 +23,7 @@ make up                       # Kafka, Mongo, Postgres+PostGIS, sync config, sch
 make ps                       # kiểm tra container
 ```
 
-`make up` chạy theo thứ tự: Postgres khởi tạo schema từ `sql/init.sql` (chỉ khi volume trống) → job `config-sync` nạp `configs/sites/*.yaml` vào bảng `crawler_configs` → scheduler bắt đầu lập lịch.
+`make up` chạy theo thứ tự: Postgres khởi tạo schema từ `sql/init.sql` (chỉ khi volume trống) → job `migrate` nâng DB lên migration mới nhất → job `config-sync` nạp `configs/sites/*.yaml` vào `crawler_configs` → scheduler và worker chạy (có healthcheck). `make up-monitoring` thêm Prometheus (http://localhost:16104) và Alertmanager gửi cảnh báo về **Telegram** (cài đặt: runbook mục 6). Backup Postgres/Mongo chạy hằng ngày vào `./backups` (runbook mục 9).
 
 | Dịch vụ | Cổng host |
 |---|---|
@@ -57,16 +57,18 @@ uv run realestate replay-dlq --site-id meeyland --limit 100
 ├── .env.example              # đúng các biến Settings đọc (có contract test)
 ├── Makefile
 ├── alembic.ini
-├── sql/init.sql              # schema + materialized views (Postgres chạy khi khởi tạo volume)
+├── sql/init.sql              # SINH TỰ ĐỘNG từ migrations (`make schema`), Postgres chạy khi volume trống
 ├── configs/sites/*.yaml      # nguồn sự thật cho crawler_configs (ADR 0004)
 ├── docker/
 │   ├── Dockerfile
-│   └── docker-compose.yml
+│   ├── docker-compose.yml
+│   └── monitoring/           # prometheus.yml, alerts.yml
 ├── docs/
 │   ├── architecture.md
 │   ├── runbook.md
 │   └── adr/
-├── migrations/               # Alembic; 001 = baseline trùng khớp sql/init.sql
+├── migrations/               # Alembic — nguồn schema duy nhất (ADR 0006)
+├── scripts/                  # generate_init_sql.py, capture_site_fixture.py (fixture HTML ẩn danh)
 ├── src/realestate/
 │   ├── domain/               # entities, value_objects, services, location — không I/O
 │   ├── application/
@@ -84,12 +86,18 @@ uv run realestate replay-dlq --site-id meeyland --limit 100
     ├── unit/                 # domain/, parsers/, use_cases/, repos/, consumers/, config/
     ├── contract/             # YAML site, .env.example, schema ↔ migration, phân lớp
     ├── integration/          # PostGIS + Mongo thật (marker `integration`)
-    ├── fixtures/             # payload mẫu đã ẩn danh
+    ├── fixtures/             # payload JSON + trang HTML thật đã thu gọn và ẩn danh
     └── helpers.py            # test double dùng chung
 ```
 
 ## Thêm một sàn mới
 
+Nếu feed mới crawl cùng sàn với một feed đã có (cùng không gian ID tin), khai báo `portal: <site_id gốc>` để tin trùng giữa hai feed được gộp (ADR 0005).
+
 1. Tạo `configs/sites/<site_id>.yaml` (tên file phải trùng `site_id`).
 2. `make test` — contract test kiểm tra schema, ngân sách trang, rate limit và round-trip qua DB.
 3. `make sync-configs` (hoặc `make up`, job `config-sync` tự chạy).
+
+## Git blame
+
+Commit chỉ format code được liệt kê trong `.git-blame-ignore-revs`. Bật một lần ở máy local: `git config blame.ignoreRevsFile .git-blame-ignore-revs`.

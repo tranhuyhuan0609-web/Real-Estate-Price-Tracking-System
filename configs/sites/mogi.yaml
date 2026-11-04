@@ -35,7 +35,7 @@ response_mapping:
     url: a.link-overlay::attr(href)
     title: h2.prop-title::text
     price_vnd: div.price::text
-    area_m2: ul.prop-attr li:nth-child(1)::text
+    area_m2: ul.prop-attr li:nth-child(1) ::text  # "250 m<sup>2</sup>" -> "250 m 2"
     city_name: div.prop-addr::text
     thumbnail_url: div.prop-img img::attr(data-src)
 detail_page:
@@ -52,8 +52,8 @@ detail_page:
     description: div.info-content-body::text, .prop-info::text
     media_list: div.media-item img::attr(data-src), .property-photos img::attr(data-src),
       div.photo img::attr(src), .media-gallery img::attr(data-src)
-    published_at: //div[contains(@class, ''info-attr'')][span[contains(text(), ''Ngày
-      đăng'')]]/span[2]/text(), span.date::text, .prop-date::text, .date::text
-    legal_status: //div[contains(@class, ''info-attr'')][span[contains(text(), ''Pháp
-      lý'')]]/span[2]/text()
+    published_at: //div[contains(@class, 'info-attr')][span[contains(text(), 'Ngày
+      đăng')]]/span[2]/text(), span.date::text, .prop-date::text, .date::text
+    legal_status: //div[contains(@class, 'info-attr')][span[contains(text(), 'Pháp
+      lý')]]/span[2]/text()
     breadcrumb: .breadcrumb *::text, ol.breadcrumb *::text

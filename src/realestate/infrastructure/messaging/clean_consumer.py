@@ -12,6 +12,7 @@ from realestate.application.use_cases.ingest_silver_gold import ProcessSilverGol
 from realestate.domain.entities import RawEventMessage
 from realestate.infrastructure.messaging.base_consumer import BaseConsumer
 from realestate.infrastructure.messaging.producer import AioKafkaEventPublisher
+from realestate.infrastructure.observability.metrics import Heartbeat
 
 Result = tuple[bool, bool]  # (is_new, price_changed)
 
@@ -30,6 +31,7 @@ class CleanEventProcessorService(BaseConsumer[RawEventMessage, Result]):
         group_id: str,
         batch_size: int = 20,
         run_once: bool = False,
+        heartbeat: Heartbeat | None = None,
     ) -> None:
         super().__init__(
             consumer_factory=consumer_factory,
@@ -38,6 +40,7 @@ class CleanEventProcessorService(BaseConsumer[RawEventMessage, Result]):
             group_id=group_id,
             batch_size=batch_size,
             run_once=run_once,
+            heartbeat=heartbeat,
         )
         self.use_case = use_case
         self.listing_repo = listing_repo
@@ -46,7 +49,9 @@ class CleanEventProcessorService(BaseConsumer[RawEventMessage, Result]):
         return RawEventMessage.model_validate(msg.value)
 
     async def process_batch(self, events: list[RawEventMessage]) -> list[Result]:
-        return [(is_new, changed) for _, is_new, changed in await self.use_case.execute_batch(events)]
+        return [
+            (is_new, changed) for _, is_new, changed in await self.use_case.execute_batch(events)
+        ]
 
     async def process_one(self, event: RawEventMessage) -> Result:
         return await self.use_case.execute(event, update_crawl_run=False)
@@ -67,7 +72,10 @@ class CleanEventProcessorService(BaseConsumer[RawEventMessage, Result]):
         for run_id, (items, new, price_changes) in per_run.items():
             try:
                 await self.listing_repo.batch_update_crawl_run_metrics(
-                    run_id, items_processed=items, new_listings_count=new, price_changes_detected=price_changes
+                    run_id,
+                    items_processed=items,
+                    new_listings_count=new,
+                    price_changes_detected=price_changes,
                 )
             except Exception as exc:
                 self.log.warning("Could not update crawl_run metrics for '%s': %s", run_id, exc)

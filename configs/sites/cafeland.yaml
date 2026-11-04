@@ -45,6 +45,7 @@ detail_page:
   enabled: true
   url_field: url
   fields:
+    published_at: "//div[contains(@class, 'infor')]/i[contains(text(), 'Ngày đăng')]/text()"
     advertiser_phone: a#detailTelSpanZalo::attr(href), a[title*="Liên hệ"]::attr(href),
       a[href*="zalo.me/"]::attr(href), a[href^="tel:"]::attr(href)
     advertiser_email: span.__cf_email__::attr(data-cfemail), a[href^="mailto:"]::attr(href),

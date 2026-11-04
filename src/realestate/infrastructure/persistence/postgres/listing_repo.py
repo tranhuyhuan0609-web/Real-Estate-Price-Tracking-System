@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from psycopg.rows import dict_row
 
-from realestate.application.ports.listing_repository import ListingRepository
+from realestate.application.ports.listing_repository import ListingObservation, ListingRepository
 from realestate.domain.entities import (
     AdvertiserData,
     ParsedListingItem,
@@ -57,8 +58,13 @@ class PgListingRepository(ListingRepository):
         item: ParsedListingItem,
         crawl_run_id: str,
         event_time: Optional[datetime] = None,
+        feed: Optional[str] = None,
     ) -> Tuple[bool, bool]:
-        """Internal worker executing upserts for advertiser, listing, details and price history."""
+        """Upsert advertiser, listing, details, price history and feed membership for one item.
+
+        ``feed`` is the crawler config (site_id) that observed the item; it defaults to the
+        item's portal. Several feeds of one portal share a listing (ADR 0005).
+        """
         # Step 1: Upsert Advertiser
         advertiser_id = await self.upsert_advertiser(cur, item.advertiser)
 
@@ -73,7 +79,11 @@ class PgListingRepository(ListingRepository):
         price_changed = False
         if is_new:
             # Insert new Listing (Silver)
-            initial_status = "contact" if (item.current_price_vnd is None or item.current_price_vnd <= 0) else "initial"
+            initial_status = (
+                "contact"
+                if (item.current_price_vnd is None or item.current_price_vnd <= 0)
+                else "initial"
+            )
             insert_listing_query = """
                 INSERT INTO listings (
                     listing_key, property_fingerprint, source, external_id,
@@ -90,16 +100,33 @@ class PgListingRepository(ListingRepository):
             await cur.execute(
                 insert_listing_query,
                 (
-                    item.listing_key, item.property_fingerprint, item.source, item.external_id,
-                    advertiser_id, event_time, event_time, item.published_at,
-                    item.category.value, item.property_type.value, item.area_m2, item.facade_m, item.depth_m,
-                    item.current_price_vnd, item.current_price_per_m2, initial_status, event_time,
+                    item.listing_key,
+                    item.property_fingerprint,
+                    item.source,
+                    item.external_id,
+                    advertiser_id,
+                    event_time,
+                    event_time,
+                    item.published_at,
+                    item.category.value,
+                    item.property_type.value,
+                    item.area_m2,
+                    item.facade_m,
+                    item.depth_m,
+                    item.current_price_vnd,
+                    item.current_price_per_m2,
+                    initial_status,
+                    event_time,
                 ),
             )
             # Insert Listing Details (Silver)
             d = item.details
             media_json = json.dumps(d.media_list) if d.media_list is not None else None
-            geom_point = f"SRID=4326;POINT({d.lng} {d.lat})" if d.lng is not None and d.lat is not None else None
+            geom_point = (
+                f"SRID=4326;POINT({d.lng} {d.lat})"
+                if d.lng is not None and d.lat is not None
+                else None
+            )
             insert_details_query = """
                 INSERT INTO listing_details (
                     listing_key, url, title, description,
@@ -114,9 +141,19 @@ class PgListingRepository(ListingRepository):
             await cur.execute(
                 insert_details_query,
                 (
-                    item.listing_key, d.url, d.title, d.description,
-                    d.city_name, d.district_name, d.ward_name,
-                    d.lng, d.lat, geom_point, d.legal_status, d.thumbnail_url, media_json,
+                    item.listing_key,
+                    d.url,
+                    d.title,
+                    d.description,
+                    d.city_name,
+                    d.district_name,
+                    d.ward_name,
+                    d.lng,
+                    d.lat,
+                    geom_point,
+                    d.legal_status,
+                    d.thumbnail_url,
+                    media_json,
                 ),
             )
             # Insert initial price history (Gold) if valid price
@@ -129,7 +166,13 @@ class PgListingRepository(ListingRepository):
                 """
                 await cur.execute(
                     insert_history_query,
-                    (item.listing_key, crawl_run_id, item.current_price_vnd, item.current_price_per_m2, event_time),
+                    (
+                        item.listing_key,
+                        crawl_run_id,
+                        item.current_price_vnd,
+                        item.current_price_per_m2,
+                        event_time,
+                    ),
                 )
         elif self._is_stale(existing, event_time):
             await self._apply_stale_event(cur, item, event_time)
@@ -143,7 +186,12 @@ class PgListingRepository(ListingRepository):
             new_price_m2 = existing.get("current_price_per_m2")
             new_price_status = existing.get("price_status")
 
-            if eval_res.price_status in (PriceStatus.INCREASED, PriceStatus.DECREASED, PriceStatus.INITIAL) and item.current_price_vnd and item.current_price_vnd > 0:
+            if (
+                eval_res.price_status
+                in (PriceStatus.INCREASED, PriceStatus.DECREASED, PriceStatus.INITIAL)
+                and item.current_price_vnd
+                and item.current_price_vnd > 0
+            ):
                 price_changed = True
                 update_price = True
                 new_price_vnd = item.current_price_vnd
@@ -196,10 +244,14 @@ class PgListingRepository(ListingRepository):
                     item.area_m2,
                     item.facade_m,
                     item.depth_m,
-                    update_price, new_price_vnd,
-                    update_price, new_price_m2,
-                    update_price, new_price_status,
-                    update_price, event_time,
+                    update_price,
+                    new_price_vnd,
+                    update_price,
+                    new_price_m2,
+                    update_price,
+                    new_price_status,
+                    update_price,
+                    event_time,
                     item.listing_key,
                 ),
             )
@@ -228,42 +280,69 @@ class PgListingRepository(ListingRepository):
             # 2.1 & 3.1: Update listing_details only when distinct to eliminate MVCC bloat
             d = item.details
             media_json = json.dumps(d.media_list) if d.media_list is not None else None
-            geom_point = f"SRID=4326;POINT({d.lng} {d.lat})" if d.lng is not None and d.lat is not None else None
+            geom_point = (
+                f"SRID=4326;POINT({d.lng} {d.lat})"
+                if d.lng is not None and d.lat is not None
+                else None
+            )
+            # Only write when something visible changed, to avoid MVCC bloat on every re-crawl.
+            # NULL incoming values keep the stored value (COALESCE), so they never count as a change.
             update_details_query = """
                 UPDATE listing_details SET
-                    url = %s,
-                    title = %s,
-                    description = COALESCE(%s, description),
-                    city_name = COALESCE(%s, city_name),
-                    district_name = COALESCE(%s, district_name),
-                    ward_name = COALESCE(%s, ward_name),
-                    lng = COALESCE(%s, lng),
-                    lat = COALESCE(%s, lat),
-                    geom = COALESCE(ST_GeomFromEWKT(%s), geom),
-                    legal_status = COALESCE(%s, legal_status),
-                    thumbnail_url = COALESCE(%s, thumbnail_url),
-                    media_list = COALESCE(%s, media_list),
+                    url = %(url)s,
+                    title = %(title)s,
+                    description = COALESCE(%(description)s, description),
+                    city_name = COALESCE(%(city)s, city_name),
+                    district_name = COALESCE(%(district)s, district_name),
+                    ward_name = COALESCE(%(ward)s, ward_name),
+                    lng = COALESCE(%(lng)s, lng),
+                    lat = COALESCE(%(lat)s, lat),
+                    geom = COALESCE(ST_GeomFromEWKT(%(geom)s), geom),
+                    legal_status = COALESCE(%(legal)s, legal_status),
+                    thumbnail_url = COALESCE(%(thumb)s, thumbnail_url),
+                    media_list = COALESCE(%(media)s::jsonb, media_list),
                     updated_at = NOW()
-                WHERE listing_key = %s
+                WHERE listing_key = %(key)s
                   AND (
-                      title, description, city_name, district_name, ward_name,
-                      lng, lat, legal_status, thumbnail_url, url
+                      url, title, description, city_name, district_name, ward_name,
+                      lng, lat, legal_status, thumbnail_url, media_list
                   ) IS DISTINCT FROM (
-                      %s, COALESCE(%s, description), COALESCE(%s, city_name), COALESCE(%s, district_name), COALESCE(%s, ward_name),
-                      COALESCE(%s, lng), COALESCE(%s, lat), COALESCE(%s, legal_status), COALESCE(%s, thumbnail_url), %s
+                      %(url)s, %(title)s,
+                      COALESCE(%(description)s, description), COALESCE(%(city)s, city_name),
+                      COALESCE(%(district)s, district_name), COALESCE(%(ward)s, ward_name),
+                      COALESCE(%(lng)s, lng), COALESCE(%(lat)s, lat),
+                      COALESCE(%(legal)s, legal_status), COALESCE(%(thumb)s, thumbnail_url),
+                      COALESCE(%(media)s::jsonb, media_list)
                   );
             """
             await cur.execute(
                 update_details_query,
-                (
-                    d.url, d.title, d.description,
-                    d.city_name, d.district_name, d.ward_name,
-                    d.lng, d.lat, geom_point, d.legal_status, d.thumbnail_url, media_json,
-                    item.listing_key,
-                    d.title, d.description, d.city_name, d.district_name, d.ward_name,
-                    d.lng, d.lat, d.legal_status, d.thumbnail_url, d.url,
-                ),
+                {
+                    "key": item.listing_key,
+                    "url": d.url,
+                    "title": d.title,
+                    "description": d.description,
+                    "city": d.city_name,
+                    "district": d.district_name,
+                    "ward": d.ward_name,
+                    "lng": d.lng,
+                    "lat": d.lat,
+                    "geom": geom_point,
+                    "legal": d.legal_status,
+                    "thumb": d.thumbnail_url,
+                    "media": media_json,
+                },
             )
+        await cur.execute(
+            """
+            INSERT INTO listing_feeds (listing_key, site_id, first_seen_at, last_seen_at)
+            VALUES (%(key)s, %(feed)s, COALESCE(%(t)s, NOW()), COALESCE(%(t)s, NOW()))
+            ON CONFLICT (listing_key, site_id) DO UPDATE SET
+                first_seen_at = LEAST(listing_feeds.first_seen_at, EXCLUDED.first_seen_at),
+                last_seen_at = GREATEST(listing_feeds.last_seen_at, EXCLUDED.last_seen_at);
+            """,
+            {"key": item.listing_key, "feed": feed or item.source, "t": event_time},
+        )
         return (is_new, price_changed)
 
     @staticmethod
@@ -307,6 +386,7 @@ class PgListingRepository(ListingRepository):
         crawl_run_id: str,
         update_crawl_run: bool = True,
         event_time: Optional[datetime] = None,
+        feed: Optional[str] = None,
     ) -> Tuple[bool, bool]:
         """Execute atomic Silver & Gold ingestion within a transaction.
 
@@ -319,7 +399,9 @@ class PgListingRepository(ListingRepository):
         async with self.pool.connection() as conn:
             async with conn.transaction():
                 async with conn.cursor(row_factory=dict_row) as cur:
-                    is_new, price_changed = await self._ingest_item_with_cursor(cur, item, crawl_run_id, event_time=event_time)
+                    is_new, price_changed = await self._ingest_item_with_cursor(
+                        cur, item, crawl_run_id, event_time=event_time, feed=feed
+                    )
 
             # Step 3 (Decoupled): Update crawl_runs metrics OUTSIDE listing transaction
             if update_crawl_run and crawl_run_id:
@@ -340,36 +422,29 @@ class PgListingRepository(ListingRepository):
 
     async def ingest_batch_transactional(
         self,
-        batch: List[Tuple[ParsedListingItem, str]],
+        batch: Sequence[ListingObservation],
     ) -> List[Tuple[bool, bool]]:
-        """Execute atomic Silver & Gold batch ingestion within a single transaction.
+        """Ingest a batch atomically in one transaction; results follow the input order.
 
-        Sorts items by listing_key before taking row locks to guarantee deterministic lock
-        ordering across concurrent worker transactions, completely eliminating deadlock risks.
-
-        Returns:
-            List[Tuple[bool, bool]]: list of (is_new, price_changed) for each item in the batch,
-            preserving the caller's original batch order.
+        Rows are locked in listing_key order so concurrent workers always take locks in the same
+        order and cannot deadlock each other.
         """
         if not batch:
             return []
-
-        # Index items and sort by listing_key to enforce global deterministic lock order
-        indexed_batch = list(enumerate(batch))
-        indexed_batch.sort(key=lambda x: x[1][0].listing_key or f"{x[1][0].source}_{x[1][0].external_id}")
-
-        results_by_index: List[Optional[Tuple[bool, bool]]] = [None] * len(batch)
+        results: List[Tuple[bool, bool]] = [(False, False)] * len(batch)
+        ordered = sorted(enumerate(batch), key=lambda pair: pair[1].item.listing_key)
         async with self.pool.connection() as conn:
             async with conn.transaction():
                 async with conn.cursor(row_factory=dict_row) as cur:
-                    for orig_idx, entry in indexed_batch:
-                        item = entry[0]
-                        crawl_run_id = entry[1]
-                        event_time = entry[2] if len(entry) > 2 else None
-                        res = await self._ingest_item_with_cursor(cur, item, crawl_run_id, event_time=event_time)
-                        results_by_index[orig_idx] = res
-
-        return [r for r in results_by_index if r is not None]
+                    for index, obs in ordered:
+                        results[index] = await self._ingest_item_with_cursor(
+                            cur,
+                            obs.item,
+                            obs.crawl_run_id,
+                            event_time=obs.event_time,
+                            feed=obs.feed,
+                        )
+        return results
 
     async def batch_update_crawl_run_metrics(
         self,

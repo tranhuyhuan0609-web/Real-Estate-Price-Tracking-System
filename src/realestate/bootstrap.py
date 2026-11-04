@@ -21,14 +21,17 @@ from pymongo import AsyncMongoClient
 from realestate.application.use_cases.apply_lifecycle import ApplyLifecycleUseCase
 from realestate.application.use_cases.crawl_site import CrawlSiteUseCase
 from realestate.application.use_cases.ingest_silver_gold import ProcessSilverGoldUseCase
+from realestate.application.use_cases.reveal_phone import RevealPhoneUseCase
 from realestate.application.use_cases.store_bronze import StoreBronzeUseCase
 from realestate.application.use_cases.sync_site_configs import SyncSiteConfigsUseCase
 from realestate.infrastructure.config.settings import Settings, load_settings
+from realestate.infrastructure.crawler.spiders.phone_revealer import PhoneRevealer
 from realestate.infrastructure.crawler.spiders.spider_factory import create_spider
 from realestate.infrastructure.messaging.clean_consumer import CleanEventProcessorService
 from realestate.infrastructure.messaging.dlq_consumer import DLQEventConsumerService
 from realestate.infrastructure.messaging.producer import AioKafkaEventPublisher
 from realestate.infrastructure.messaging.raw_consumer import RawEventConsumerService
+from realestate.infrastructure.observability.metrics import Heartbeat
 from realestate.infrastructure.persistence.mongo.bronze_repo import MongoBronzeRepository
 from realestate.infrastructure.persistence.mongo.setup import (
     init_dlq_mongo_indexes,
@@ -37,8 +40,10 @@ from realestate.infrastructure.persistence.mongo.setup import (
 from realestate.infrastructure.persistence.postgres.config_repo import PostgresConfigRepository
 from realestate.infrastructure.persistence.postgres.connection import create_pg_pool
 from realestate.infrastructure.persistence.postgres.crawl_run_repo import PostgresCrawlRunRepository
+from realestate.infrastructure.persistence.postgres.leader_lock import PgAdvisoryLeaderLock
 from realestate.infrastructure.persistence.postgres.lifecycle_repo import PgLifecycleRepository
 from realestate.infrastructure.persistence.postgres.listing_repo import PgListingRepository
+from realestate.infrastructure.persistence.postgres.phone_repo import PgPhoneListingRepository
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +90,8 @@ class AppContainer:
             await self.pg_pool.close()
         if "bronze_repo" in self.__dict__:
             await self.bronze_repo.close()
+        if "leader_lock" in self.__dict__:
+            await self.leader_lock.close()
         if "mongo_client" in self.__dict__:
             await self.mongo_client.close()
         logger.debug("AppContainer closed.")
@@ -96,7 +103,14 @@ class AppContainer:
 
     @cached_property
     def publisher(self) -> AioKafkaEventPublisher:
-        return AioKafkaEventPublisher(self.settings.KAFKA_BOOTSTRAP_SERVERS)
+        return AioKafkaEventPublisher(
+            self.settings.KAFKA_BOOTSTRAP_SERVERS, security=self.settings.kafka_client_kwargs()
+        )
+
+    @cached_property
+    def leader_lock(self) -> PgAdvisoryLeaderLock:
+        """Scheduler leadership (dedicated connection, outside the pool)."""
+        return PgAdvisoryLeaderLock(self.settings.postgres_dsn)
 
     @cached_property
     def mongo_client(self) -> AsyncMongoClient:
@@ -106,7 +120,7 @@ class AppContainer:
         """A new (not yet started) consumer with manual commits, reading JSON values."""
         return AIOKafkaConsumer(
             topic,
-            bootstrap_servers=self.settings.KAFKA_BOOTSTRAP_SERVERS,
+            **self.settings.kafka_client_kwargs(),
             group_id=group_id,
             enable_auto_commit=False,
             auto_offset_reset="earliest",
@@ -132,7 +146,9 @@ class AppContainer:
 
     @cached_property
     def bronze_repo(self) -> MongoBronzeRepository:
-        return MongoBronzeRepository(mongo_uri=self.settings.mongo_uri, db_name=self.settings.MONGO_DB)
+        return MongoBronzeRepository(
+            mongo_uri=self.settings.mongo_uri, db_name=self.settings.MONGO_DB
+        )
 
     # ------------------------------------------------------------- use cases
     @cached_property
@@ -161,40 +177,67 @@ class AppContainer:
     def sync_site_configs_uc(self) -> SyncSiteConfigsUseCase:
         return SyncSiteConfigsUseCase(self.config_repo)
 
+    @cached_property
+    def phone_revealer(self) -> PhoneRevealer:
+        return PhoneRevealer()
+
+    @cached_property
+    def phone_repo(self) -> PgPhoneListingRepository:
+        return PgPhoneListingRepository(self.pg_pool)
+
+    @cached_property
+    def reveal_phone_uc(self) -> RevealPhoneUseCase:
+        return RevealPhoneUseCase(repo=self.phone_repo, revealer=self.phone_revealer)
+
     # ------------------------------------------------------------- workers
-    def bronze_worker(self, *, batch_size: int = 50, run_once: bool = False) -> RawEventConsumerService:
+    def bronze_worker(
+        self, *, batch_size: int = 50, run_once: bool = False
+    ) -> RawEventConsumerService:
         st = self.settings
         return RawEventConsumerService(
             use_case=self.store_bronze_uc,
-            consumer_factory=lambda: self.kafka_consumer(st.KAFKA_RAW_TOPIC, st.KAFKA_GROUP_RAW_WRITER),
+            consumer_factory=lambda: self.kafka_consumer(
+                st.KAFKA_RAW_TOPIC, st.KAFKA_GROUP_RAW_WRITER
+            ),
             dlq_publisher=self.publisher,
             dlq_topic=st.KAFKA_DLQ_TOPIC,
             group_id=st.KAFKA_GROUP_RAW_WRITER,
             init_indexes=lambda: init_mongo_indexes(st.mongo_uri, st.MONGO_DB),
             batch_size=batch_size,
             run_once=run_once,
+            heartbeat=Heartbeat("bronze", st.HEARTBEAT_DIR),
         )
 
-    def silver_gold_worker(self, *, batch_size: int = 20, run_once: bool = False) -> CleanEventProcessorService:
+    def silver_gold_worker(
+        self, *, batch_size: int = 20, run_once: bool = False
+    ) -> CleanEventProcessorService:
         st = self.settings
         return CleanEventProcessorService(
             use_case=self.ingest_silver_gold_uc,
             listing_repo=self.listing_repo,
-            consumer_factory=lambda: self.kafka_consumer(st.KAFKA_RAW_TOPIC, st.KAFKA_GROUP_CLEAN_PROCESSOR),
+            consumer_factory=lambda: self.kafka_consumer(
+                st.KAFKA_RAW_TOPIC, st.KAFKA_GROUP_CLEAN_PROCESSOR
+            ),
             dlq_publisher=self.publisher,
             dlq_topic=st.KAFKA_DLQ_TOPIC,
             group_id=st.KAFKA_GROUP_CLEAN_PROCESSOR,
             batch_size=batch_size,
             run_once=run_once,
+            heartbeat=Heartbeat("silver_gold", st.HEARTBEAT_DIR),
         )
 
-    def dlq_worker(self, *, batch_size: int = 50, run_once: bool = False) -> DLQEventConsumerService:
+    def dlq_worker(
+        self, *, batch_size: int = 50, run_once: bool = False
+    ) -> DLQEventConsumerService:
         st = self.settings
         return DLQEventConsumerService(
             collection=self.mongo_client[st.MONGO_DB]["dlq_events"],
-            consumer_factory=lambda: self.kafka_consumer(st.KAFKA_DLQ_TOPIC, st.KAFKA_GROUP_DLQ_WRITER),
+            consumer_factory=lambda: self.kafka_consumer(
+                st.KAFKA_DLQ_TOPIC, st.KAFKA_GROUP_DLQ_WRITER
+            ),
             group_id=st.KAFKA_GROUP_DLQ_WRITER,
             init_indexes=lambda: init_dlq_mongo_indexes(st.mongo_uri, st.MONGO_DB),
             batch_size=batch_size,
             run_once=run_once,
+            heartbeat=Heartbeat("dlq", st.HEARTBEAT_DIR),
         )

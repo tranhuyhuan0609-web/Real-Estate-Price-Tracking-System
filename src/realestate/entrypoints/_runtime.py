@@ -14,7 +14,8 @@ import sys
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from realestate.infrastructure.config.settings import load_settings
+from realestate.infrastructure.config.settings import Settings, load_settings
+from realestate.infrastructure.observability.metrics import start_metrics_server
 
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 
@@ -31,6 +32,13 @@ def configure_runtime() -> None:
 
     level = load_settings().CRAWLER_LOG_LEVEL
     logging.basicConfig(level=level, format=LOG_FORMAT, force=True)
+
+
+def serve_metrics() -> Settings:
+    """Start the Prometheus endpoint for long-running services (not for CLI commands)."""
+    settings = load_settings()
+    start_metrics_server(settings.METRICS_PORT)
+    return settings
 
 
 def run_service(main_coro: Coroutine[Any, Any, None], on_shutdown: Callable[[], None]) -> None:

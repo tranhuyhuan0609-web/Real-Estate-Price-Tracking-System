@@ -20,3 +20,6 @@ htmlcov/
 # Editors
 .vscode/
 .idea/
+
+# Database dumps written by the pg-backup / mongo-backup services
+backups/

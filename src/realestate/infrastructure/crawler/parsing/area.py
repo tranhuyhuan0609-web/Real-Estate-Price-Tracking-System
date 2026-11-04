@@ -31,7 +31,7 @@ def parse_vietnamese_area(raw: Any) -> Optional[float]:
         val = float(norm_text)
         return val if 0 < val <= 5_000_000 else None
     # 2. String containing explicit area unit (m2, m², m^2, mét vuông)
-    m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(?:m[2²]|m\^2|mét\s*vuông)\b", norm_text)
+    m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(?:m\s?[2²]|m\^2|mét\s*vuông)\b", norm_text)
     if m:
         try:
             val = float(m.group(1))
@@ -39,7 +39,7 @@ def parse_vietnamese_area(raw: Any) -> Optional[float]:
         except ValueError:
             pass
     # Fallback search in raw text
-    m2 = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:m[2²]|m\^2|mét\s*vuông)\b", text)
+    m2 = re.search(r"([0-9]+(?:[\.,][0-9]+)?)\s*(?:m\s?[2²]|m\^2|mét\s*vuông)\b", text)
     if m2:
         try:
             val_str = normalize_vietnamese_number_str(m2.group(1))

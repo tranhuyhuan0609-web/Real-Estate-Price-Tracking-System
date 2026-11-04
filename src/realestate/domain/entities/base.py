@@ -13,4 +13,3 @@ NonBlank = Annotated[
 
 class StrictBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
-

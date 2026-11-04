@@ -3,11 +3,15 @@ from realestate.infrastructure.persistence.postgres.connection import create_pg_
 from realestate.infrastructure.persistence.postgres.crawl_run_repo import PostgresCrawlRunRepository
 from realestate.infrastructure.persistence.postgres.lifecycle_repo import PgLifecycleRepository
 from realestate.infrastructure.persistence.postgres.listing_repo import PgListingRepository
-from realestate.infrastructure.persistence.postgres.phone_repo import PgPhoneRepository
+from realestate.infrastructure.persistence.postgres.phone_repo import (
+    PgPhoneListingRepository,
+    PgPhoneRepository,
+)
 
 __all__ = [
     "PgLifecycleRepository",
     "PgListingRepository",
+    "PgPhoneListingRepository",
     "PgPhoneRepository",
     "PostgresConfigRepository",
     "PostgresCrawlRunRepository",

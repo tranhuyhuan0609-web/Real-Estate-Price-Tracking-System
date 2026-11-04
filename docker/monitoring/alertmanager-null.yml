@@ -1,0 +1,5 @@
+# Used when TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set: alerts are kept but not sent.
+route:
+  receiver: "null"
+receivers:
+  - name: "null"

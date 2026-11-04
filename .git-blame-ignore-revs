@@ -1,0 +1,6 @@
+# Commits that only reformat code; `git blame` skips them so lines keep their real author.
+# GitHub applies this file automatically. Locally, run once:
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Add the full SHA of each formatting-only commit below (one per line), e.g. the one-off
+# `ruff format` commit:  git log --format=%H -1 <that commit>

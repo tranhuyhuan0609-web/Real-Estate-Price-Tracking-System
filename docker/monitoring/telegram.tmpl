@@ -1,0 +1,9 @@
+{{ define "realestate.telegram" -}}
+{{ if eq .Status "firing" }}🔴 <b>{{ len .Alerts.Firing }} cảnh báo</b>{{ else }}✅ <b>Đã hết cảnh báo</b>{{ end }} · Real Estate Tracker
+{{ range .Alerts }}
+<b>{{ .Labels.alertname }}</b> [{{ .Labels.severity }}]{{ if .Labels.site }} · {{ .Labels.site }}{{ end }}{{ if .Labels.consumer }} · {{ .Labels.consumer }}{{ end }}
+{{ .Annotations.summary }}
+{{- if .Annotations.action }}
+➜ {{ .Annotations.action }}{{ end }}
+{{ end }}
+{{- end }}

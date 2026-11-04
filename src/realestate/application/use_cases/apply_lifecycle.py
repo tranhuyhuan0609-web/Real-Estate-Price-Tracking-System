@@ -23,7 +23,9 @@ class ApplyLifecycleUseCase:
         default_max_missing_count: int = DEFAULT_MAX_MISSING_COUNT,
     ) -> None:
         if repo is None:
-            raise ValueError("A LifecycleRepository instance must be provided to ApplyLifecycleUseCase.")
+            raise ValueError(
+                "A LifecycleRepository instance must be provided to ApplyLifecycleUseCase."
+            )
         self.repo: LifecycleRepository = repo
         self.default_max_missing_count = default_max_missing_count
 
@@ -55,7 +57,10 @@ class ApplyLifecycleUseCase:
             if processed >= scraped or (scraped > 0 and (processed / scraped) >= min_ratio):
                 logger.info(
                     "Ingestion gate reached for '%s': %d/%d processed (ratio: %.2f)",
-                    crawl_run_id, processed, scraped, (processed / scraped) if scraped else 1.0,
+                    crawl_run_id,
+                    processed,
+                    scraped,
+                    (processed / scraped) if scraped else 1.0,
                 )
                 return True
 
@@ -68,13 +73,19 @@ class ApplyLifecycleUseCase:
                     return True
                 logger.warning(
                     "Ingestion idle for %.1fs on run '%s' at %d/%d items (below min_ratio %.2f). Ingestion stalled.",
-                    now - last_progress_at, crawl_run_id, processed, scraped, min_ratio,
+                    now - last_progress_at,
+                    crawl_run_id,
+                    processed,
+                    scraped,
+                    min_ratio,
                 )
                 return False
 
             await asyncio.sleep(poll_sec)
 
-        logger.error("Timed out waiting for ingestion on run '%s' after %.1fs", crawl_run_id, timeout_sec)
+        logger.error(
+            "Timed out waiting for ingestion on run '%s' after %.1fs", crawl_run_id, timeout_sec
+        )
         return False
 
     async def execute(
@@ -91,12 +102,20 @@ class ApplyLifecycleUseCase:
 
         run_status = run.get("status")
         if run_status != "completed":
-            logger.warning("Run '%s' has status '%s' (not completed). Lifecycle skipped.", crawl_run_id, run_status)
+            logger.warning(
+                "Run '%s' has status '%s' (not completed). Lifecycle skipped.",
+                crawl_run_id,
+                run_status,
+            )
             return {"incremented": 0, "expired": 0}
 
         run_mode = run.get("run_mode")
         if run_mode != "full_sweep":
-            logger.info("Run '%s' has mode '%s' (not full_sweep). Lifecycle skipped.", crawl_run_id, run_mode)
+            logger.info(
+                "Run '%s' has mode '%s' (not full_sweep). Lifecycle skipped.",
+                crawl_run_id,
+                run_mode,
+            )
             return {"incremented": 0, "expired": 0}
 
         items_scraped = run.get("items_scraped")
@@ -106,7 +125,9 @@ class ApplyLifecycleUseCase:
 
         site_id = run["site_id"]
         started_at = run["started_at"]
-        limit = max_missing_count if max_missing_count is not None else self.default_max_missing_count
+        limit = (
+            max_missing_count if max_missing_count is not None else self.default_max_missing_count
+        )
 
         stats = await self.repo.apply_lifecycle_transaction(
             site_id=site_id,
@@ -117,11 +138,12 @@ class ApplyLifecycleUseCase:
 
         logger.info(
             "Lifecycle applied for '%s': missing_count incremented for %d listings, %d marked expired.",
-            crawl_run_id, stats["incremented"], stats["expired"]
+            crawl_run_id,
+            stats["incremented"],
+            stats["expired"],
         )
         return stats
 
     async def refresh_gold_views(self) -> None:
         """Refresh analytical materialized views in PostgreSQL concurrently without locking."""
         await self.repo.refresh_gold_views()
-

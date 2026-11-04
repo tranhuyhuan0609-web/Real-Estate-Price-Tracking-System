@@ -1,9 +1,21 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, List, Optional, Protocol, Tuple
+from typing import List, Optional, Protocol, Tuple
 
 from realestate.domain.entities.listing import ParsedListingItem
+
+
+@dataclass(frozen=True)
+class ListingObservation:
+    """One parsed listing as seen by one crawl run at ``event_time`` (None = now)."""
+
+    item: ParsedListingItem
+    crawl_run_id: str
+    event_time: Optional[datetime] = None
+    feed: Optional[str] = None  # crawler config that saw it; defaults to item.source (portal)
 
 
 class ListingRepository(Protocol):
@@ -15,15 +27,16 @@ class ListingRepository(Protocol):
         crawl_run_id: str,
         update_crawl_run: bool = True,
         event_time: Optional[datetime] = None,
+        feed: Optional[str] = None,
     ) -> Tuple[bool, bool]:
         """Ingest a parsed listing into relational silver & gold layers."""
         ...
 
     async def ingest_batch_transactional(
         self,
-        batch: List[Tuple[Any, ...]],
+        batch: Sequence[ListingObservation],
     ) -> List[Tuple[bool, bool]]:
-        """Ingest a batch of parsed listings atomically within a single transaction."""
+        """Ingest a batch atomically; returns (is_new, price_changed) per observation, in input order."""
         ...
 
     async def batch_update_crawl_run_metrics(
@@ -36,4 +49,3 @@ class ListingRepository(Protocol):
     ) -> None:
         """Batch update crawl run metrics."""
         ...
-

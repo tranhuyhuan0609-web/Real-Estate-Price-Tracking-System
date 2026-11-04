@@ -54,18 +54,26 @@ async def test_replay_from_mongo_filters_and_deletes(mongo_uri):
     client = AsyncMongoClient(mongo_uri)
     coll = client["it_dlq"]["dlq_events"]
     await coll.delete_many({})
-    await coll.insert_many([
-        {"_id": "a", "raw_key": "mogi_1", "raw_payload": {"site_id": "mogi"}},
-        {"_id": "b", "raw_key": "meeyland_2", "raw_payload": {"site_id": "meeyland"}},
-    ])
+    await coll.insert_many(
+        [
+            {"_id": "a", "raw_key": "mogi_1", "raw_payload": {"site_id": "mogi"}},
+            {"_id": "b", "raw_key": "meeyland_2", "raw_payload": {"site_id": "meeyland"}},
+        ]
+    )
     publisher = AsyncMock()
     try:
         n = await replay_from_mongo(
-            mongo_uri=mongo_uri, db_name="it_dlq", target_topic="raw",
-            publisher=publisher, site_id="mogi", delete_on_replay=True,
+            mongo_uri=mongo_uri,
+            db_name="it_dlq",
+            target_topic="raw",
+            publisher=publisher,
+            site_id="mogi",
+            delete_on_replay=True,
         )
         assert n == 1
-        publisher.publish.assert_awaited_once_with(topic="raw", key="mogi_1", value={"site_id": "mogi"})
+        publisher.publish.assert_awaited_once_with(
+            topic="raw", key="mogi_1", value={"site_id": "mogi"}
+        )
         assert [d["_id"] async for d in coll.find({})] == ["b"]
     finally:
         await client.close()

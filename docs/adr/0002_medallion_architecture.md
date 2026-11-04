@@ -9,7 +9,7 @@ Raw scraped HTML/JSON varies drastically by website and changes over time. Stori
 ## Decision
 Implement a three-tier Medallion architecture:
 1. **Bronze (MongoDB)**: Stores unmutated raw JSON/HTML payloads with audit metadata (`crawl_run_id`, timestamp).
-2. **Silver (PostgreSQL)**: Normalized tables (`listings`, `listing_details`, `advertisers`) with parsed types, geo-points, and deduplication keys.
+2. **Silver (PostgreSQL)**: Normalized tables (`listings`, `listing_details`, `advertisers`) with parsed types, geo-points, and a property fingerprint for duplicate analysis.
 3. **Gold (PostgreSQL & Materialized Views)**: Append-only price history (`listing_price_history`) and aggregated market metrics (`mv_ward_avg_price_per_m2`).
 
 ## Consequences

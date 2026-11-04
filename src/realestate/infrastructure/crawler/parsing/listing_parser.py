@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
 from realestate.domain.entities import (
@@ -16,6 +16,10 @@ from realestate.domain.entities import (
     PropertyType,
 )
 from realestate.domain.entities.crawler_config import CrawlerConfig
+from realestate.domain.location.administrative_data import (
+    KNOWN_HANOI_DISTRICT_NAMES,
+    KNOWN_HCM_DISTRICT_NAMES,
+)
 from realestate.domain.services import (
     generate_fingerprint,
     generate_listing_key,
@@ -67,17 +71,59 @@ from realestate.infrastructure.crawler.parsing.road_width import (
 def infer_property_type(text: str) -> PropertyType:
     """Infer property type from listing title, breadcrumbs or URL slug if not explicitly mapped."""
     t = text.lower()
-    if re.search(r"\b(căn hộ|can ho|chung cư|chung cu|ccmn|chcc|penthouse|duplex|officetel|tập thể|tap the|[1-5]\s*pn|phòng ngủ)\b", t) or "-can-ho-" in t or "-chung-cu-" in t or "/can-ho-" in t or "/chung-cu-" in t:
+    if (
+        re.search(
+            r"\b(căn hộ|can ho|chung cư|chung cu|ccmn|chcc|penthouse|duplex|officetel|tập thể|tap the|[1-5]\s*pn|phòng ngủ)\b",
+            t,
+        )
+        or "-can-ho-" in t
+        or "-chung-cu-" in t
+        or "/can-ho-" in t
+        or "/chung-cu-" in t
+    ):
         return PropertyType.APARTMENT
-    if re.search(r"\b(biệt thự|biet thu|villa|dinh thự|dinh thu)\b", t) or "-biet-thu-" in t or "-villa-" in t or "/biet-thu-" in t:
+    if (
+        re.search(r"\b(biệt thự|biet thu|villa|dinh thự|dinh thu)\b", t)
+        or "-biet-thu-" in t
+        or "-villa-" in t
+        or "/biet-thu-" in t
+    ):
         return PropertyType.VILLA
-    if re.search(r"\b(shophouse|nhà phố thương mại|nha pho thuong mai)\b", t) or "-shophouse-" in t or "/shophouse-" in t:
+    if (
+        re.search(r"\b(shophouse|nhà phố thương mại|nha pho thuong mai)\b", t)
+        or "-shophouse-" in t
+        or "/shophouse-" in t
+    ):
         return PropertyType.SHOPHOUSE
-    if re.search(r"\b(kho|xưởng|nhà xưởng|văn phòng|van phong|mặt bằng|mat bang|khách sạn|hotel|resort|kios|ki-ốt|tmdv|thương mại dịch vụ|sàn chân đế)\b", t) or "-kho-" in t or "-xuong-" in t or "-van-phong-" in t or "-mat-bang-" in t:
+    if (
+        re.search(
+            r"\b(kho|xưởng|nhà xưởng|văn phòng|van phong|mặt bằng|mat bang|khách sạn|hotel|resort|kios|ki-ốt|tmdv|thương mại dịch vụ|sàn chân đế)\b",
+            t,
+        )
+        or "-kho-" in t
+        or "-xuong-" in t
+        or "-van-phong-" in t
+        or "-mat-bang-" in t
+    ):
         return PropertyType.COMMERCIAL
-    if re.search(r"\b(đất|dat|đất nền|dat nen|thổ cư|tho cu|lô đất|lo dat|mảnh đất|thửa đất|lô góc|lo goc|vườn|sào|hecta|ha)\b", t) or "-dat-" in t or "-dat-nen-" in t or "/ban-dat" in t:
+    if (
+        re.search(
+            r"\b(đất|dat|đất nền|dat nen|thổ cư|tho cu|lô đất|lo dat|mảnh đất|thửa đất|lô góc|lo goc|vườn|sào|hecta|ha)\b",
+            t,
+        )
+        or "-dat-" in t
+        or "-dat-nen-" in t
+        or "/ban-dat" in t
+    ):
         return PropertyType.LAND
-    if re.search(r"\b(nhà|nha|nhà riêng|nha rieng|nhà phố|nha pho|nhà mặt tiền|nha mat tien|nhà hẻm|nha hem|nhà ngõ|nha ngo|nhà cấp 4|liền kề|lien ke|hxh|hxt|bán nr|\bnr\b|\d+\s*tầng)\b", t) or "-nha-" in t or "/ban-nha" in t:
+    if (
+        re.search(
+            r"\b(nhà|nha|nhà riêng|nha rieng|nhà phố|nha pho|nhà mặt tiền|nha mat tien|nhà hẻm|nha hem|nhà ngõ|nha ngo|nhà cấp 4|liền kề|lien ke|hxh|hxt|bán nr|\bnr\b|\d+\s*tầng)\b",
+            t,
+        )
+        or "-nha-" in t
+        or "/ban-nha" in t
+    ):
         return PropertyType.HOUSE
     return PropertyType.OTHER
 
@@ -85,11 +131,40 @@ def infer_property_type(text: str) -> PropertyType:
 def infer_category(text: str) -> Category:
     """Infer transaction category (sale/rent/project) from title or URL slug if not mapped."""
     t = text.lower()
-    if re.search(r"\b(cho thuê|cho thue|thuê|thue)\b", t) or "/cho-thue-" in t or "/thue-" in t or "-cho-thue-" in t:
+    if (
+        re.search(r"\b(cho thuê|cho thue|thuê|thue)\b", t)
+        or "/cho-thue-" in t
+        or "/thue-" in t
+        or "-cho-thue-" in t
+    ):
         return Category.RENT
     if re.search(r"\b(dự án|du an)\b", t) or "/du-an-" in t or "-du-an-" in t:
         return Category.PROJECT
     return Category.SALE
+
+
+_CITY_URL_HINTS = (
+    (("ho-chi-minh", "tphcm", "tp-hcm"), "Thành phố Hồ Chí Minh"),
+    (("ha-noi", "hanoi"), "Thành phố Hà Nội"),
+    (("da-nang", "danang"), "Thành phố Đà Nẵng"),
+    (("binh-duong", "binhduong"), "Tỉnh Bình Dương"),
+    (("dong-nai", "dongnai"), "Tỉnh Đồng Nai"),
+)
+
+
+def infer_city(url: str, district_name: Optional[str]) -> Optional[str]:
+    """Last-resort city guess from URL slugs, then from well-known HCM / Hà Nội district names."""
+    url_lower = (url or "").lower()
+    for hints, city in _CITY_URL_HINTS:
+        if any(h in url_lower for h in hints):
+            return city
+    dist_lower = (district_name or "").lower()
+    if dist_lower:
+        if any(d in dist_lower for d in KNOWN_HCM_DISTRICT_NAMES):
+            return "Thành phố Hồ Chí Minh"
+        if any(d in dist_lower for d in KNOWN_HANOI_DISTRICT_NAMES):
+            return "Thành phố Hà Nội"
+    return None
 
 
 class ListingParser:
@@ -122,281 +197,291 @@ class ListingParser:
 
     def parse_item(self, raw_item: Dict[str, Any]) -> ParsedListingItem:
         """Parse a single raw listing dictionary according to CrawlerConfig."""
-        # 1. External IDs (avoid str(None) -> 'None')
-        ext_id_val = self._extract_val(raw_item, "external_id")
-        external_id = str(ext_id_val).strip() if ext_id_val is not None and str(ext_id_val).strip() else None
-
-        ext_code_val = self._extract_val(raw_item, "external_code")
-        external_code = safe_int(ext_code_val)
-
-        # Clean external_id if it's a URL path (e.g. "...-id22756927" or "...-es2367045" or "...-3191063.html" or "...-p519188.html")
-        if external_id and ("/" in external_id or "-id" in external_id or "-es" in external_id or "-p" in external_id or ".html" in external_id or ".htm" in external_id):
-            m = re.search(r"-id(\d+)(?:[/?#]|$)|-es(\d+)(?:[/?#]|$)|-p(\d+)\.html|-(\d+)\.html|/(\d+)(?:\.htm)?(?:[/?#]|$)", external_id)
-            if m:
-                external_id = m.group(1) or m.group(2) or m.group(3) or m.group(4) or m.group(5)
-
+        external_id, external_code = self._external_ids(raw_item)
         listing_key = generate_listing_key(
-            self.config.site_id,
-            external_code=external_code,
-            external_id=external_id,
+            self.config.portal_id, external_code=external_code, external_id=external_id
         )
 
-        # 2. Dimensions & Price
-        area_val = self._extract_val(raw_item, "area_m2")
-        area_m2 = parse_vietnamese_area(area_val)
-
-        price_val = self._extract_val(raw_item, "price_vnd")
-        current_price_vnd, current_price_per_m2 = parse_vietnamese_price(price_val, area_m2)
-        if current_price_vnd is not None:
-            current_price_vnd = float(round(current_price_vnd))
-        if current_price_per_m2 is not None:
-            current_price_per_m2 = float(round(current_price_per_m2))
-        elif current_price_vnd and area_m2 and area_m2 > 0:
-            current_price_per_m2 = float(round(current_price_vnd / area_m2, 0))
-
-        facade_val = self._extract_val(raw_item, "facade_m")
-        parsed_facade = safe_float(facade_val)
-        facade_m = parsed_facade if parsed_facade is not None and parsed_facade > 0 else None
-
-        depth_val = self._extract_val(raw_item, "depth_m")
-        parsed_depth = safe_float(depth_val)
-        depth_m = parsed_depth if parsed_depth is not None and parsed_depth > 0 else None
-
-        # 3. Category & Property Type Enums
-        title = str(self._extract_val(raw_item, "title") or "").strip()
-        raw_url = str(self._extract_val(raw_item, "url") or "").strip()
-        breadcrumb = str(self._extract_val(raw_item, "breadcrumb") or "").strip()
-        context_hint = f"{title} {breadcrumb} {raw_url}"
-
-        raw_category = self._extract_val(raw_item, "category")
-        if raw_category is not None:
-            category_str = self._map_enum_value("category", raw_category, Category.SALE.value)
-            try:
-                category = Category(category_str)
-            except ValueError:
-                category = infer_category(context_hint)
-        else:
-            category = infer_category(context_hint)
-
-        # Override category if title explicitly specifies rental (e.g. "Cho thuê nhà phố...")
-        title_lower = title.lower()
-        if category == Category.SALE and re.search(r"\b(cho thuê|cho thue)\b", title_lower) and not re.search(r"\b(bán|ban)\b", title_lower):
-            category = Category.RENT
-
-        raw_prop_type = self._extract_val(raw_item, "property_type")
-        if raw_prop_type is not None:
-            prop_type_str = self._map_enum_value("property_type", raw_prop_type, PropertyType.OTHER.value)
-            try:
-                property_type = PropertyType(prop_type_str)
-                if property_type == PropertyType.OTHER:
-                    property_type = infer_property_type(context_hint)
-            except ValueError:
-                property_type = infer_property_type(context_hint)
-        else:
-            property_type = infer_property_type(context_hint)
-
-        # 4. Descriptive details & regex extraction
+        title = self._text(raw_item, "title")
         description = self._extract_val(raw_item, "description")
         description_str = clean_html(str(description)) if description is not None else None
+        text_context = f"{title} {description_str or ''}"
 
-        # Fallback dimension extraction from title and description if not provided in raw item
-        if facade_m is None or depth_m is None:
-            text_context = f"{title} {description_str or ''}"
-            f_ext, d_ext = extract_dimensions(text_context)
-            if facade_m is None:
-                facade_m = f_ext
-            if depth_m is None:
-                depth_m = d_ext
+        area_m2 = parse_vietnamese_area(self._extract_val(raw_item, "area_m2"))
+        price_vnd, price_per_m2 = self._price(raw_item, area_m2)
+        facade_m, depth_m = self._dimensions(raw_item, text_context)
+        category, property_type = self._classify(raw_item, title)
 
-        legal_status: Optional[str]
-        raw_legal = self._extract_val(raw_item, "legal_status")
-        if raw_legal is not None and str(raw_legal).strip():
-            legal_status = str(self._map_enum_value("legal_status", raw_legal, str(raw_legal).strip()))
-        else:
-            legal_status = extract_legal_status(description_str)
-
-        # Build absolute URL using urljoin
-        raw_url = str(self._extract_val(raw_item, "url") or "").strip()
-        if raw_url:
-            base_url = str(self.config.request.url)
-            url = urljoin(base_url, raw_url)
-        elif self.config.site_id == "nhatot" and external_id:
-            url = f"https://www.nhatot.com/{external_id}.htm"
-        else:
-            url = ""
-
-        # Coordinates with Vietnam bounding box sanity check (lat: 8..24, lng: 102..110.5)
-        lng = safe_float(self._extract_val(raw_item, "lng"))
-        lat = safe_float(self._extract_val(raw_item, "lat"))
-        if lat is not None and lng is not None:
-            if not (8.0 <= lat <= 24.0 and 102.0 <= lng <= 110.5):
-                lat, lng = None, None
-
-        # Published date parsing
-        pub_raw = self._extract_val(raw_item, "published_at")
-        published_at = parse_vietnamese_datetime(pub_raw)
-
-        # Media list: extract string URLs only
-        raw_media = self._extract_val(raw_item, "media_list")
-        media_list: Optional[List[str]] = None
-        if isinstance(raw_media, list):
-            urls: List[str] = []
-            for m in raw_media:
-                if isinstance(m, str) and m.strip():
-                    urls.append(m.strip())
-                elif isinstance(m, dict):
-                    m_url = m.get("url") or m.get("uri") or m.get("src")
-                    if m_url and isinstance(m_url, str) and m_url.strip():
-                        urls.append(m_url.strip())
-            media_list = urls if urls else None
-
-        # 4.5. Structured Address Parsing (city_name, district_name, ward_name, street_name)
-        addr_val = self._extract_val(raw_item, "address")
-        city_raw = self._extract_val(raw_item, "city_name")
-        district_raw = self._extract_val(raw_item, "district_name")
-        ward_raw = self._extract_val(raw_item, "ward_name")
-
-        addr_parts = parse_vietnamese_address(
-            raw_address=str(addr_val).strip() if addr_val else None,
-            city_hint=str(city_raw).strip() if city_raw else None,
-            district_hint=str(district_raw).strip() if district_raw else None,
-            ward_hint=str(ward_raw).strip() if ward_raw else None,
-        )
-
-        if not addr_parts.get("city_name"):
-            url_lower = url.lower()
-            if any(k in url_lower for k in ["ho-chi-minh", "tphcm", "tp-hcm"]):
-                addr_parts["city_name"] = "Thành phố Hồ Chí Minh"
-            elif any(k in url_lower for k in ["ha-noi", "hanoi"]):
-                addr_parts["city_name"] = "Thành phố Hà Nội"
-            elif any(k in url_lower for k in ["da-nang", "danang"]):
-                addr_parts["city_name"] = "Thành phố Đà Nẵng"
-            elif any(k in url_lower for k in ["binh-duong", "binhduong"]):
-                addr_parts["city_name"] = "Tỉnh Bình Dương"
-            elif any(k in url_lower for k in ["dong-nai", "dongnai"]):
-                addr_parts["city_name"] = "Tỉnh Đồng Nai"
-            elif addr_parts.get("district_name"):
-                dist_lower = (addr_parts["district_name"] or "").lower()
-                hcm_districts = ["quận 1", "quận 2", "quận 3", "quận 4", "quận 5", "quận 6", "quận 7", "quận 8", "quận 9", "quận 10", "quận 11", "quận 12", "bình thạnh", "gò vấp", "tân bình", "tân phú", "phú nhuận", "bình tân", "thủ đức", "hóc môn", "củ chi", "bình chánh", "nhà bè", "cần giờ"]
-                hanoi_districts = ["ba đình", "hoàn kiếm", "tây hồ", "long biên", "cầu giấy", "đống đa", "hai bà trưng", "hoàng mai", "thanh xuân", "nam từ liêm", "bắc từ liêm", "hà đông", "sơn tây", "ba vì", "phúc thọ", "đan phượng", "hoài đức", "quốc oai", "thạch thất", "chương mỹ", "thanh oai", "thường tín", "phú xuyên", "ứng hòa", "mê linh", "đông anh", "gia lâm", "sóc sơn", "thanh trì"]
-                if any(d in dist_lower for d in hcm_districts):
-                    addr_parts["city_name"] = "Thành phố Hồ Chí Minh"
-                elif any(d in dist_lower for d in hanoi_districts):
-                    addr_parts["city_name"] = "Thành phố Hà Nội"
-
+        url = self._url(raw_item, external_id, external_code)
+        lat, lng = self._coordinates(raw_item)
+        address = self._address(raw_item, url)
         details = ListingDetailsData(
             url=url,
             title=title,
             description=description_str,
-            city_name=addr_parts["city_name"],
-            district_name=addr_parts["district_name"],
-            ward_name=addr_parts["ward_name"],
+            city_name=address["city_name"],
+            district_name=address["district_name"],
+            ward_name=address["ward_name"],
             lng=lng,
             lat=lat,
-            legal_status=legal_status[:50] if legal_status else None,
+            legal_status=self._legal_status(raw_item, description_str),
             thumbnail_url=self._extract_val(raw_item, "thumbnail_url"),
-            media_list=media_list,
-        )
-
-        # 5. Advertiser
-        adv_id = self._extract_val(raw_item, "advertiser_id")
-        adv_phone = self._extract_val(raw_item, "advertiser_phone")
-        adv_name = self._extract_val(raw_item, "advertiser_name")
-        if adv_name and str(adv_name).strip():
-            raw_name = str(adv_name).strip()
-            words = raw_name.split()
-            if len(words) >= 2 and len(words) % 2 == 0:
-                mid = len(words) // 2
-                if words[:mid] == words[mid:]:
-                    raw_name = " ".join(words[:mid])
-            adv_name = raw_name
-        adv_email_raw = self._extract_val(raw_item, "advertiser_email")
-        raw_adv_kind = self._extract_val(raw_item, "advertiser_kind")
-        adv_kind_str = self._map_enum_value("advertiser_kind", raw_adv_kind, AdvertiserKind.UNKNOWN.value)
-        try:
-            adv_kind = AdvertiserKind(adv_kind_str)
-        except ValueError:
-            adv_kind = AdvertiserKind.UNKNOWN
-
-        adv_ver_raw = self._extract_val(raw_item, "advertiser_is_verified")
-        if adv_ver_raw is not None:
-            if isinstance(adv_ver_raw, bool):
-                is_verified = adv_ver_raw
-            elif isinstance(adv_ver_raw, (int, float)):
-                is_verified = bool(adv_ver_raw)
-            else:
-                is_verified = str(adv_ver_raw).strip().lower() in ("true", "1", "yes")
-        else:
-            is_verified = False
-
-        # Prioritize real contact phone to prevent clobbering brokers into aggregator crawl accounts
-        parsed_phone = parse_vietnamese_phone(adv_phone)
-        if not parsed_phone:
-            # Fallback: scan title and description for phone number
-            text_context = f"{title} {description_str or ''}"
-            parsed_phone = extract_phone_from_text(text_context)
-
-        # Multi-tier email extraction & unmasking
-        parsed_email = clean_email(adv_email_raw)
-        if not parsed_email:
-            # Fallback 1: scan description and title for unmasked email
-            text_context = f"{title} {description_str or ''}"
-            parsed_email = extract_email_from_text(text_context)
-        if not parsed_email:
-            # Fallback 2: scan raw_item values for any email, avatar, or Cloudflare encoded string
-            for k, v in raw_item.items():
-                if isinstance(v, str) and ("@" in v or "cfemail" in k.lower() or len(v) >= 16):
-                    cand = clean_email(v)
-                    if cand:
-                        parsed_email = cand
-                        break
-
-        display_phone = parsed_phone[:20] if parsed_phone else None
-
-        if parsed_phone:
-            advertiser_id = f"adv_{self.config.site_id}_{parsed_phone[:20]}"
-        elif adv_id:
-            advertiser_id = str(adv_id).strip()[:64]
-        elif adv_name and str(adv_name).strip():
-            adv_clean = str(adv_name).strip()
-            name_hash = hashlib.md5(adv_clean.lower().encode("utf-8")).hexdigest()[:12]
-            advertiser_id = f"adv_{self.config.site_id}_{name_hash}"
-        else:
-            advertiser_id = None
-
-        advertiser = AdvertiserData(
-            advertiser_id=advertiser_id,
-            name=str(adv_name).strip()[:100] if adv_name else None,
-            phone=display_phone,
-            email=parsed_email[:100] if parsed_email else None,
-            kind=adv_kind,
-            is_verified=is_verified,
-        )
-
-        # 6. Fingerprint for cross-listing deduplication
-        fingerprint = generate_fingerprint(
-            title=title,
-            area_m2=area_m2,
-            city_name=details.city_name,
-            district_name=details.district_name,
-            ward_name=details.ward_name,
-            advertiser_phone=advertiser.phone,
+            media_list=media_urls(self._extract_val(raw_item, "media_list")),
         )
 
         return ParsedListingItem(
             listing_key=listing_key,
-            source=self.config.site_id,
+            source=self.config.portal_id,
             external_id=external_id,
             external_code=external_code,
-            property_fingerprint=fingerprint,
+            property_fingerprint=generate_fingerprint(
+                title=title,
+                area_m2=area_m2,
+                city_name=details.city_name,
+                district_name=details.district_name,
+                ward_name=details.ward_name,
+            ),
             category=category,
             property_type=property_type,
             area_m2=area_m2,
             facade_m=facade_m,
             depth_m=depth_m,
-            current_price_vnd=current_price_vnd,
-            current_price_per_m2=current_price_per_m2,
-            published_at=published_at,
+            current_price_vnd=price_vnd,
+            current_price_per_m2=price_per_m2,
+            published_at=parse_vietnamese_datetime(
+                self._extract_val(raw_item, "published_at"),
+                default_tz=self.config.content_zoneinfo(),
+            ),
             details=details,
-            advertiser=advertiser,
+            advertiser=self._advertiser(raw_item, text_context),
         )
+
+    # ------------------------------------------------------------------ steps
+    def _text(self, raw_item: Dict[str, Any], field: str) -> str:
+        return str(self._extract_val(raw_item, field) or "").strip()
+
+    def _external_ids(self, raw_item: Dict[str, Any]) -> Tuple[Optional[str], Optional[int]]:
+        raw_id = self._extract_val(raw_item, "external_id")
+        external_id = str(raw_id).strip() if raw_id is not None and str(raw_id).strip() else None
+        return clean_external_id(external_id), safe_int(
+            self._extract_val(raw_item, "external_code")
+        )
+
+    def _price(
+        self, raw_item: Dict[str, Any], area_m2: Optional[float]
+    ) -> Tuple[Optional[float], Optional[float]]:
+        price_vnd, per_m2 = parse_vietnamese_price(
+            self._extract_val(raw_item, "price_vnd"), area_m2
+        )
+        if price_vnd is not None:
+            price_vnd = float(round(price_vnd))
+        if per_m2 is not None:
+            per_m2 = float(round(per_m2))
+        elif price_vnd and area_m2 and area_m2 > 0:
+            per_m2 = float(round(price_vnd / area_m2, 0))
+        return price_vnd, per_m2
+
+    def _dimensions(
+        self, raw_item: Dict[str, Any], text_context: str
+    ) -> Tuple[Optional[float], Optional[float]]:
+        facade = positive(safe_float(self._extract_val(raw_item, "facade_m")))
+        depth = positive(safe_float(self._extract_val(raw_item, "depth_m")))
+        if facade is None or depth is None:
+            f_ext, d_ext = extract_dimensions(text_context)
+            facade = facade if facade is not None else f_ext
+            depth = depth if depth is not None else d_ext
+        return facade, depth
+
+    def _classify(self, raw_item: Dict[str, Any], title: str) -> Tuple[Category, PropertyType]:
+        hint = f"{title} {self._text(raw_item, 'breadcrumb')} {self._text(raw_item, 'url')}"
+
+        category: Optional[Category] = None
+        raw_category = self._extract_val(raw_item, "category")
+        if raw_category is not None:
+            try:
+                category = Category(
+                    self._map_enum_value("category", raw_category, Category.SALE.value)
+                )
+            except ValueError:
+                category = None
+        if category is None:
+            category = infer_category(hint)
+        # A title that says "cho thuê" (and not "bán") is a rental whatever the source category says.
+        title_lower = title.lower()
+        if (
+            category == Category.SALE
+            and re.search(r"\b(cho thuê|cho thue)\b", title_lower)
+            and not re.search(r"\b(bán|ban)\b", title_lower)
+        ):
+            category = Category.RENT
+
+        property_type = PropertyType.OTHER
+        raw_type = self._extract_val(raw_item, "property_type")
+        if raw_type is not None:
+            try:
+                property_type = PropertyType(
+                    self._map_enum_value("property_type", raw_type, PropertyType.OTHER.value)
+                )
+            except ValueError:
+                property_type = PropertyType.OTHER
+        if property_type == PropertyType.OTHER:
+            property_type = infer_property_type(hint)
+        return category, property_type
+
+    def _legal_status(self, raw_item: Dict[str, Any], description: Optional[str]) -> Optional[str]:
+        raw = self._extract_val(raw_item, "legal_status")
+        if raw is not None and str(raw).strip():
+            status: Optional[str] = str(self._map_enum_value("legal_status", raw, str(raw).strip()))
+        else:
+            status = extract_legal_status(description)
+        return status[:50] if status else None
+
+    def _url(
+        self, raw_item: Dict[str, Any], external_id: Optional[str], external_code: Optional[int]
+    ) -> str:
+        raw_url = self._text(raw_item, "url")
+        if raw_url:
+            return urljoin(str(self.config.request.url), raw_url)
+        if self.mapping.url_template and (external_id or external_code):
+            return self.mapping.url_template.format(
+                external_id=external_id or "", external_code=external_code or ""
+            )
+        return ""
+
+    def _coordinates(self, raw_item: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]]:
+        lat = safe_float(self._extract_val(raw_item, "lat"))
+        lng = safe_float(self._extract_val(raw_item, "lng"))
+        if (
+            lat is not None
+            and lng is not None
+            and not (8.0 <= lat <= 24.0 and 102.0 <= lng <= 110.5)
+        ):
+            return None, None  # outside Vietnam's bounding box
+        return lat, lng
+
+    def _address(self, raw_item: Dict[str, Any], url: str) -> Dict[str, Optional[str]]:
+        def hint(field: str) -> Optional[str]:
+            value = self._extract_val(raw_item, field)
+            return str(value).strip() if value else None
+
+        parts = parse_vietnamese_address(
+            raw_address=hint("address"),
+            city_hint=hint("city_name"),
+            district_hint=hint("district_name"),
+            ward_hint=hint("ward_name"),
+        )
+        if not parts.get("city_name"):
+            parts["city_name"] = infer_city(url, parts.get("district_name"))
+        return parts
+
+    def _advertiser(self, raw_item: Dict[str, Any], text_context: str) -> AdvertiserData:
+        name = dedupe_repeated_name(self._extract_val(raw_item, "advertiser_name"))
+
+        try:
+            kind = AdvertiserKind(
+                self._map_enum_value(
+                    "advertiser_kind",
+                    self._extract_val(raw_item, "advertiser_kind"),
+                    AdvertiserKind.UNKNOWN.value,
+                )
+            )
+        except ValueError:
+            kind = AdvertiserKind.UNKNOWN
+
+        # The contact phone wins over aggregator account phones; fall back to the text.
+        phone = parse_vietnamese_phone(
+            self._extract_val(raw_item, "advertiser_phone")
+        ) or extract_phone_from_text(text_context)
+        email = (
+            clean_email(self._extract_val(raw_item, "advertiser_email"))
+            or extract_email_from_text(text_context)
+            or first_email_in_values(raw_item)
+        )
+
+        raw_id = self._extract_val(raw_item, "advertiser_id")
+        advertiser_id: Optional[str]
+        if phone:
+            advertiser_id = f"adv_{self.config.portal_id}_{phone[:20]}"
+        elif raw_id:
+            advertiser_id = str(raw_id).strip()[:64]
+        elif name:
+            name_hash = hashlib.md5(name.lower().encode("utf-8")).hexdigest()[:12]
+            advertiser_id = f"adv_{self.config.portal_id}_{name_hash}"
+        else:
+            advertiser_id = None
+
+        return AdvertiserData(
+            advertiser_id=advertiser_id,
+            name=name[:100] if name else None,
+            phone=phone[:20] if phone else None,
+            email=email[:100] if email else None,
+            kind=kind,
+            is_verified=parse_bool(self._extract_val(raw_item, "advertiser_is_verified")),
+        )
+
+
+# ---------------------------------------------------------------------- helpers
+_EXTERNAL_ID_IN_URL = re.compile(
+    r"-id(\d+)(?:[/?#]|$)|-es(\d+)(?:[/?#]|$)|-p(\d+)\.html|-(\d+)\.html|/(\d+)(?:\.htm)?(?:[/?#]|$)"
+)
+
+
+def clean_external_id(external_id: Optional[str]) -> Optional[str]:
+    """Pull the numeric id out of a listing URL ("...-id22756927", "...-es123", "...-3191063.html")."""
+    if not external_id or not any(
+        token in external_id for token in ("/", "-id", "-es", "-p", ".html", ".htm")
+    ):
+        return external_id
+    m = _EXTERNAL_ID_IN_URL.search(external_id)
+    if not m:
+        return external_id
+    return next(g for g in m.groups() if g)
+
+
+def positive(value: Optional[float]) -> Optional[float]:
+    return value if value is not None and value > 0 else None
+
+
+def dedupe_repeated_name(raw: Any) -> Optional[str]:
+    """A name scraped twice from one node ("Nguyễn An Nguyễn An") is collapsed."""
+    if not raw or not str(raw).strip():
+        return None
+    name = str(raw).strip()
+    words = name.split()
+    half = len(words) // 2
+    if len(words) >= 2 and len(words) % 2 == 0 and words[:half] == words[half:]:
+        return " ".join(words[:half])
+    return name
+
+
+def parse_bool(raw: Any) -> bool:
+    if raw is None:
+        return False
+    if isinstance(raw, (bool, int, float)):
+        return bool(raw)
+    return str(raw).strip().lower() in ("true", "1", "yes")
+
+
+def media_urls(raw: Any) -> Optional[List[str]]:
+    """Image URLs from a list of strings or of {url|uri|src} objects."""
+    if not isinstance(raw, list):
+        return None
+    urls: List[str] = []
+    for m in raw:
+        if isinstance(m, dict):
+            m = m.get("url") or m.get("uri") or m.get("src")
+        if isinstance(m, str) and m.strip():
+            urls.append(m.strip())
+    return urls or None
+
+
+def first_email_in_values(raw_item: Dict[str, Any]) -> Optional[str]:
+    """Last resort: any value that cleans to an e-mail (avatar URL, Cloudflare hex, ...)."""
+    for key, value in raw_item.items():
+        if isinstance(value, str) and (
+            "@" in value or "cfemail" in key.lower() or len(value) >= 16
+        ):
+            email = clean_email(value)
+            if email:
+                return email
+    return None

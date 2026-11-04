@@ -23,7 +23,11 @@ def test_parse_captured_meeyland_item():
 
     d = item.details
     assert d.url == "https://meeyland.com/ban-dat-can-giuoc-tay-ninh-p1122/307624752"
-    assert (d.city_name, d.district_name, d.ward_name) == ("Tỉnh Tây Ninh", "Cần Giuộc", "Xã Cần Giuộc")
+    assert (d.city_name, d.district_name, d.ward_name) == (
+        "Tỉnh Tây Ninh",
+        "Cần Giuộc",
+        "Xã Cần Giuộc",
+    )
     assert d.legal_status == "Sổ đỏ/hồng"
     assert 8 < d.lat < 24 and 102 < d.lng < 110
     assert item.advertiser is not None and item.advertiser.phone == "0900000001"

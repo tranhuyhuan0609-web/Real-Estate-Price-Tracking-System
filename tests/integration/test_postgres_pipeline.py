@@ -47,8 +47,12 @@ async def test_ingest_parsed_listing_then_price_change(pg_pool):
 
     def event(parsed, at):
         return RawEventMessage(
-            listing_key=parsed.listing_key, site_id="meeyland", crawl_run_id="run_1",
-            scraped_at=at, parsed_data=parsed, raw_payload=raw,
+            listing_key=parsed.listing_key,
+            site_id="meeyland",
+            crawl_run_id="run_1",
+            scraped_at=at,
+            parsed_data=parsed,
+            raw_payload=raw,
         )
 
     assert await uc.execute(event(item, t0)) == (True, False)
@@ -88,8 +92,12 @@ async def test_replayed_old_event_does_not_roll_listing_back(pg_pool):
 
     def event(parsed, at):
         return RawEventMessage(
-            listing_key=parsed.listing_key, site_id="meeyland", crawl_run_id="run_1",
-            scraped_at=at, parsed_data=parsed, raw_payload=raw,
+            listing_key=parsed.listing_key,
+            site_id="meeyland",
+            crawl_run_id="run_1",
+            scraped_at=at,
+            parsed_data=parsed,
+            raw_payload=raw,
         )
 
     await uc.execute(event(item, today))
@@ -140,3 +148,177 @@ async def test_schedule_states_and_interrupted_runs(pg_pool):
 
     assert await repo.fail_interrupted_runs(max_age_minutes=60) == 1
     assert not (await repo.get_schedule_states())["meeyland"].running
+
+
+async def test_detail_update_detects_media_only_change(pg_pool):
+    """A re-crawl where only the photos changed must still update listing_details."""
+    config = load_site_config(SITES_DIR / "meeyland.yaml")
+    await SyncSiteConfigsUseCase(PostgresConfigRepository(pg_pool)).execute([config])
+    await _seed_run(pg_pool, "run_1")
+    raw = load_fixture("meeyland_item.json")
+    item = ListingParser(config).parse_item(raw)
+    uc = ProcessSilverGoldUseCase(pg_repo=PgListingRepository(pg_pool))
+    t0 = datetime(2026, 11, 1, tzinfo=timezone.utc)
+
+    def event(parsed, at):
+        return RawEventMessage(
+            listing_key=parsed.listing_key,
+            site_id="meeyland",
+            crawl_run_id="run_1",
+            scraped_at=at,
+            parsed_data=parsed,
+            raw_payload=raw,
+        )
+
+    async def stored():
+        async with pg_pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT media_list, updated_at FROM listing_details WHERE listing_key = %s",
+                (item.listing_key,),
+            )
+            return await cur.fetchone()
+
+    await uc.execute(event(item, t0))
+    _, first_update = await stored()
+
+    await uc.execute(event(item, t0 + timedelta(hours=1)))  # identical -> no write
+    assert (await stored())[1] == first_update
+
+    new_media = ["https://img.example.com/new-1.jpg", "https://img.example.com/new-2.jpg"]
+    changed = item.model_copy(
+        update={"details": item.details.model_copy(update={"media_list": new_media})}
+    )
+    await uc.execute(event(changed, t0 + timedelta(hours=2)))
+    media, _ = await stored()
+    assert media == new_media
+
+
+async def test_batch_keeps_input_order_and_uses_event_time(pg_pool):
+    from realestate.application.ports.listing_repository import ListingObservation
+
+    config = load_site_config(SITES_DIR / "meeyland.yaml")
+    await SyncSiteConfigsUseCase(PostgresConfigRepository(pg_pool)).execute([config])
+    await _seed_run(pg_pool, "run_1")
+    item = ListingParser(config).parse_item(load_fixture("meeyland_item.json"))
+    other = item.model_copy(update={"listing_key": "meeyland_000000001"})
+    newer = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    older = newer - timedelta(days=1)
+    cheaper = item.model_copy(update={"current_price_vnd": 1_000_000_000})
+
+    results = await PgListingRepository(pg_pool).ingest_batch_transactional(
+        [
+            ListingObservation(item, "run_1", newer),
+            ListingObservation(other, "run_1", newer),
+            ListingObservation(cheaper, "run_1", older),  # stale within the same batch
+        ]
+    )
+
+    assert results == [(True, False), (True, False), (False, False)]
+    async with pg_pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT current_price_vnd, first_seen_at FROM listings WHERE listing_key = %s",
+            (item.listing_key,),
+        )
+        assert await cur.fetchone() == (item.current_price_vnd, older)
+
+
+async def test_feeds_of_one_portal_share_listings_and_scope_lifecycle(pg_pool):
+    """ADR 0005: mogi + mogi_apartment see one ad once; each feed's sweep only ages its own ads."""
+    from realestate.application.ports.listing_repository import ListingObservation
+    from realestate.infrastructure.persistence.postgres.lifecycle_repo import PgLifecycleRepository
+
+    mogi = load_site_config(SITES_DIR / "mogi.yaml")
+    mogi_apt = load_site_config(SITES_DIR / "mogi_apartment.yaml")
+    meeyland = load_site_config(SITES_DIR / "meeyland.yaml")
+    await SyncSiteConfigsUseCase(PostgresConfigRepository(pg_pool)).execute(
+        [mogi, mogi_apt, meeyland]
+    )
+    await _seed_run(pg_pool, "run_1")
+    base = ListingParser(load_site_config(SITES_DIR / "meeyland.yaml")).parse_item(
+        load_fixture("meeyland_item.json")
+    )
+    apartment = base.model_copy(update={"listing_key": "mogi_100", "source": "mogi"})
+    house = base.model_copy(update={"listing_key": "mogi_200", "source": "mogi"})
+    t0 = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    repo = PgListingRepository(pg_pool)
+
+    results = await repo.ingest_batch_transactional(
+        [
+            ListingObservation(apartment, "run_1", t0, feed="mogi"),
+            ListingObservation(apartment, "run_1", t0, feed="mogi_apartment"),
+            ListingObservation(house, "run_1", t0, feed="mogi"),
+        ]
+    )
+    assert results[0][0] and not results[1][0]  # second feed did not create a second listing
+
+    sweep_start = t0 + timedelta(days=1)  # mogi_apartment sweep that found nothing
+    stats = await PgLifecycleRepository(pg_pool).apply_lifecycle_transaction(
+        site_id="mogi_apartment", started_at=sweep_start, crawl_run_id="run_1"
+    )
+    assert stats["incremented"] == 1
+
+    async with pg_pool.connection() as conn:
+        cur = await conn.execute("SELECT listing_key, missing_count FROM listings ORDER BY 1")
+        assert await cur.fetchall() == [("mogi_100", 1), ("mogi_200", 0)]
+        cur = await conn.execute(
+            "SELECT count(*) FROM listing_feeds WHERE listing_key = 'mogi_100'"
+        )
+        assert (await cur.fetchone())[0] == 2
+
+
+async def test_history_partitions_are_created_ahead_and_drain_default(pg_pool):
+    from realestate.infrastructure.persistence.postgres.lifecycle_repo import PgLifecycleRepository
+
+    config = load_site_config(SITES_DIR / "meeyland.yaml")
+    await SyncSiteConfigsUseCase(PostgresConfigRepository(pg_pool)).execute([config])
+    item = ListingParser(config).parse_item(load_fixture("meeyland_item.json"))
+    await _seed_run(pg_pool, "run_1")
+    await PgListingRepository(pg_pool).ingest_listing_transactional(
+        item, "run_1", update_crawl_run=False
+    )
+
+    far = datetime.now(timezone.utc).replace(day=1) + timedelta(days=200)  # beyond months_ahead=2
+    async with pg_pool.connection() as conn:
+        await conn.execute(
+            "INSERT INTO listing_price_history (listing_key, price_vnd, price_status, recorded_at) "
+            "VALUES (%s, 1, 'initial', %s)",
+            (item.listing_key, far),
+        )
+        cur = await conn.execute(
+            "SELECT tableoid::regclass::text FROM listing_price_history WHERE recorded_at = %s",
+            (far,),
+        )
+        assert (await cur.fetchone())[0] == "listing_price_history_default"
+
+    created = await PgLifecycleRepository(pg_pool).ensure_history_partitions(months_ahead=8)
+    assert created >= 1
+
+    async with pg_pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT tableoid::regclass::text FROM listing_price_history WHERE recorded_at = %s",
+            (far,),
+        )
+        assert (await cur.fetchone())[0] == f"listing_price_history_y{far:%Y}m{far:%m}"
+        cur = await conn.execute("SELECT count(*) FROM listing_price_history_default")
+        assert (await cur.fetchone())[0] == 0
+    assert await PgLifecycleRepository(pg_pool).ensure_history_partitions(months_ahead=8) == 0
+
+
+async def test_only_one_scheduler_leads_and_standby_takes_over(postgres_dsn):
+    from realestate.infrastructure.persistence.postgres.leader_lock import PgAdvisoryLeaderLock
+
+    a, b = (
+        PgAdvisoryLeaderLock(postgres_dsn, key=4242),
+        PgAdvisoryLeaderLock(postgres_dsn, key=4242),
+    )
+    try:
+        assert await a.ensure() is True
+        assert await b.ensure() is False  # standby
+        assert await a.ensure() is True  # leader keeps it across polls
+
+        await a.close()  # leader dies -> Postgres releases the session lock
+        assert await b.ensure() is True
+        assert await a.ensure() is False
+    finally:
+        await a.close()
+        await b.close()

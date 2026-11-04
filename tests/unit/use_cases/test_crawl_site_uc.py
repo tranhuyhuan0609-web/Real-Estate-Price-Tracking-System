@@ -227,3 +227,33 @@ async def test_crawl_site_use_case_zero_items_warning(seed_row):
         error_message="Warning: 0 items scraped for site 'meeyland'. Possible layout change or bot block.",
     )
 
+
+@pytest.mark.parametrize(
+    ("strategy", "location", "page", "expected"),
+    [
+        ("page_number", "body", 3, {"body": {"page": 3, "limit": 20}, "params": {}}),
+        ("page_number", "query", 2, {"body": None, "params": {"page": 2, "limit": 20}}),
+        ("offset_limit", "query", 3, {"body": None, "params": {"page": 40, "limit": 20}}),
+    ],
+)
+def test_api_page_request_shapes(seed_row, strategy, location, page, expected):
+    config = row_to_config(seed_row)
+    method = "POST" if location == "body" else "GET"
+    pagination = config.pagination.model_copy(
+        update={
+            "strategy": strategy,
+            "param_location": location,
+            "page_param": "page",
+            "limit_param": "limit",
+            "page_size": 20,
+            "start_page": 1,
+        }
+    )
+    request = config.request.model_copy(
+        update={"method": method, "query_params": {}, "body_template": {}}
+    )
+    spider = GenericApiSpider(
+        config.model_copy(update={"pagination": pagination, "request": request})
+    )
+    params, body = spider._page_request(page)
+    assert {"body": body, "params": params} == expected

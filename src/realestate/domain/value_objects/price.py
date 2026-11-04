@@ -12,6 +12,7 @@ class PriceStatus(str, Enum):
     UNCHANGED = "unchanged"
     CONTACT = "contact"
 
+
 class PriceChangeEvaluation(BaseModel):
     price_diff_vnd: float
     price_diff_percent: float

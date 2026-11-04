@@ -55,9 +55,13 @@ class CrawlSiteUseCase:
         mode_str = run_mode.value if isinstance(run_mode, RunMode) else str(run_mode)
 
         # 0. Abort any stale 'running' sessions older than 60 minutes to prevent blocked scheduler
-        stale_count = await self.crawl_run_repo.abort_stale_runs(site_id=site_id, max_age_minutes=60)
+        stale_count = await self.crawl_run_repo.abort_stale_runs(
+            site_id=site_id, max_age_minutes=60
+        )
         if isinstance(stale_count, (int, float)) and stale_count > 0:
-            logger.warning("Aborted %d stale running crawl sessions for site '%s'", int(stale_count), site_id)
+            logger.warning(
+                "Aborted %d stale running crawl sessions for site '%s'", int(stale_count), site_id
+            )
 
         # 1. Open session in crawl_runs
         await self.crawl_run_repo.create_run(
@@ -65,7 +69,9 @@ class CrawlSiteUseCase:
             site_id=site_id,
             run_mode=mode_str,
         )
-        logger.info("Started crawl run '%s' for site '%s' (mode: %s)", crawl_run_id, site_id, mode_str)
+        logger.info(
+            "Started crawl run '%s' for site '%s' (mode: %s)", crawl_run_id, site_id, mode_str
+        )
 
         if spider_override is not None:
             spider = spider_override
@@ -84,7 +90,9 @@ class CrawlSiteUseCase:
             if not b:
                 return
             if len(b) == 1:
-                await self.event_publisher.publish(topic=self.kafka_topic, key=b[0][0], value=b[0][1])
+                await self.event_publisher.publish(
+                    topic=self.kafka_topic, key=b[0][0], value=b[0][1]
+                )
             else:
                 await self.event_publisher.publish_batch(topic=self.kafka_topic, events=b)
             b.clear()
@@ -142,14 +150,18 @@ class CrawlSiteUseCase:
                 # A full sweep that saw nothing is a failure; an empty incremental run stays a warning.
                 await self.crawl_run_repo.complete_run(
                     crawl_run_id=crawl_run_id,
-                    status=(CrawlRunStatus.FAILED if is_full_sweep else CrawlRunStatus.COMPLETED).value,
+                    status=(
+                        CrawlRunStatus.FAILED if is_full_sweep else CrawlRunStatus.COMPLETED
+                    ).value,
                     error_message=warning_msg,
                 )
             elif problem:
                 logger.warning("Crawl run '%s' for site '%s': %s", crawl_run_id, site_id, problem)
                 await self.crawl_run_repo.complete_run(
                     crawl_run_id=crawl_run_id,
-                    status=(CrawlRunStatus.FAILED if is_full_sweep else CrawlRunStatus.COMPLETED).value,
+                    status=(
+                        CrawlRunStatus.FAILED if is_full_sweep else CrawlRunStatus.COMPLETED
+                    ).value,
                     error_message=problem,
                 )
             else:
@@ -160,9 +172,13 @@ class CrawlSiteUseCase:
             try:
                 await self.config_repo.update_last_run(site_id)
             except Exception as update_err:
-                logger.warning("Could not update last_run_at for site '%s': %s", site_id, update_err)
+                logger.warning(
+                    "Could not update last_run_at for site '%s': %s", site_id, update_err
+                )
 
-            logger.info("Successfully completed crawl run '%s' with %d items.", crawl_run_id, items_count)
+            logger.info(
+                "Successfully completed crawl run '%s' with %d items.", crawl_run_id, items_count
+            )
             return crawl_run_id
 
         except Exception as exc:
@@ -173,4 +189,3 @@ class CrawlSiteUseCase:
                 error_message=str(exc),
             )
             raise
-

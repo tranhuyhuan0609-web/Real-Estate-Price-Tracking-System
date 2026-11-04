@@ -42,7 +42,11 @@ class RevealPhoneUseCase:
         advertiser_name = row.get("advertiser_name")
 
         # If already unmasked valid phone, return early
-        if existing_phone and "*" not in existing_phone and len(re.sub(r"\D", "", existing_phone)) >= 9:
+        if (
+            existing_phone
+            and "*" not in existing_phone
+            and len(re.sub(r"\D", "", existing_phone)) >= 9
+        ):
             return {
                 "listing_key": listing_key,
                 "advertiser_phone": existing_phone,
@@ -71,4 +75,3 @@ class RevealPhoneUseCase:
             "advertiser_phone": revealed_phone,
             "status": "revealed",
         }
-

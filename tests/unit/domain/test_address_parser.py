@@ -119,4 +119,3 @@ def test_empty_address():
     assert res["ward_name"] is None
     assert res["district_name"] is None
     assert res["city_name"] is None
-

@@ -23,12 +23,13 @@ jobs:
           uv export --frozen --no-dev --no-emit-project --no-header -o /tmp/requirements.lock
           diff -u requirements.lock /tmp/requirements.lock
       - name: Ruff
-        # TODO: add `ruff format --check` once the one-off `make format` commit has landed.
-        run: uv run --frozen ruff check src tests migrations
+        run: |
+          uv run --frozen ruff check src tests migrations scripts
+          uv run --frozen ruff format --check src tests migrations scripts
       - name: Mypy
         run: uv run --frozen mypy
-      - name: Pytest
-        run: uv run --frozen pytest --cov --cov-report=term-missing
+      - name: Pytest (coverage gate: tool.coverage.report.fail_under)
+        run: uv run --frozen pytest --cov --cov-report=term --cov-report=xml
 
   integration:
     name: Integration tests (testcontainers)

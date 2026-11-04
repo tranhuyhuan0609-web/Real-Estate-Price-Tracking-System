@@ -30,7 +30,9 @@ def sample_item():
         area_m2=50.0,
         current_price_per_m2=60000000.0,
         details=ListingDetailsData(url="https://test.com/555", title="Nhà phố"),
-        advertiser=AdvertiserData(advertiser_id="adv_1", phone="0901234567", kind=AdvertiserKind.BROKER),
+        advertiser=AdvertiserData(
+            advertiser_id="adv_1", phone="0901234567", kind=AdvertiserKind.BROKER
+        ),
     )
 
 
@@ -84,7 +86,6 @@ async def test_process_silver_gold_price_changed(sample_item):
 
     assert is_new is False
     assert price_changed is True
-
 
 
 @pytest.mark.asyncio
@@ -211,8 +212,11 @@ async def test_process_silver_gold_reactivates_expired_listing(sample_item):
 
     executed_queries = [call[0][0] for call in mock_cursor.execute.call_args_list]
     reactivate_updates = [
-        q for q in executed_queries
-        if "ended_at = NULL" in q and "status = 'active'" in q and "advertiser_id = COALESCE(%s, advertiser_id)" in q
+        q
+        for q in executed_queries
+        if "ended_at = NULL" in q
+        and "status = 'active'" in q
+        and "advertiser_id = COALESCE(%s, advertiser_id)" in q
     ]
     assert len(reactivate_updates) == 1
 
@@ -322,6 +326,3 @@ async def test_process_silver_gold_execute_batch(sample_item):
     assert results[0][1] is True  # is_new
     assert results[1][1] is True  # is_new
     assert mock_pool.connection.call_count == 1
-
-
-

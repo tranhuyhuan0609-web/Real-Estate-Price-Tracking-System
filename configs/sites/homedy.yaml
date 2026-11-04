@@ -51,8 +51,8 @@ detail_page:
       a[id*="pj_"]::attr(id), [data-email]::attr(data-email), a[href^="mailto:"]::attr(href)
     description: .description *::text, .product-description *::text, div.product-description::text,
       .description::text
-    published_at: //p[contains(@class, ''lb-code'')][contains(text(), ''Ngày đăng'')]/following-sibling::p[contains(@class,
-      ''code'')][1]/text(), span.date::text, .product-date::text, .created-date::text,
+    published_at: //p[contains(@class, 'lb-code')][contains(text(), 'Ngày đăng')]/following-sibling::p[contains(@class,
+      'code')][1]/text(), span.date::text, .product-date::text, .created-date::text,
       .date::text
     media_list: .gallery-item img::attr(data-src), .gallery-item img::attr(src), .swiper-slide
       img::attr(src)

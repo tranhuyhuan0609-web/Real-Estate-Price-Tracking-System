@@ -72,3 +72,20 @@ def test_duplicate_kafka_topics_raise_error(monkeypatch):
 
     with pytest.raises(ValidationError, match="The RAW topic and DLQ topic must be different"):
         Settings()
+
+
+def test_kafka_plaintext_kwargs_by_default():
+    kwargs = Settings().kafka_client_kwargs()
+    assert kwargs == {"bootstrap_servers": "kafka:19092", "security_protocol": "PLAINTEXT"}
+
+
+def test_kafka_sasl_kwargs_and_required_credentials(monkeypatch):
+    monkeypatch.setenv("KAFKA_SECURITY_PROTOCOL", "SASL_PLAINTEXT")
+    with pytest.raises(ValidationError, match="KAFKA_SASL_USERNAME"):
+        Settings()
+    monkeypatch.setenv("KAFKA_SASL_USERNAME", "svc")
+    monkeypatch.setenv("KAFKA_SASL_PASSWORD", "s3cret")
+    kwargs = Settings().kafka_client_kwargs()
+    assert kwargs["sasl_mechanism"] == "SCRAM-SHA-512"
+    assert (kwargs["sasl_plain_username"], kwargs["sasl_plain_password"]) == ("svc", "s3cret")
+    assert "s3cret" not in repr(Settings())  # never leaked through logs/reprs

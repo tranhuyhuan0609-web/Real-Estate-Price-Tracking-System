@@ -103,4 +103,3 @@ class RawEventMessage(BaseModel):
     scraped_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     parsed_data: ParsedListingItem
     raw_payload: Dict[str, Any]
-

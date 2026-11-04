@@ -27,7 +27,9 @@ async def forward_to_dlq(
         "topic": getattr(msg, "topic", "unknown"),
         "partition": getattr(msg, "partition", 0),
         "offset": getattr(msg, "offset", 0),
-        "raw_key": msg.key.decode("utf-8", errors="replace") if isinstance(getattr(msg, "key", None), (bytes, bytearray)) else str(getattr(msg, "key", "")),
+        "raw_key": msg.key.decode("utf-8", errors="replace")
+        if isinstance(getattr(msg, "key", None), (bytes, bytearray))
+        else str(getattr(msg, "key", "")),
         "raw_payload": getattr(msg, "value", None),
         "error_type": exc.__class__.__name__,
         "error_message": str(exc),
@@ -98,11 +100,13 @@ async def replay_from_kafka(
     site_id: Optional[str] = None,
     error_type: Optional[str] = None,
     limit: int = 1000,
+    security: Optional[Dict[str, Any]] = None,
 ) -> int:
     """Replay failed events directly from Kafka DLQ topic."""
     consumer = AIOKafkaConsumer(
         dlq_topic,
         bootstrap_servers=bootstrap_servers,
+        **{k: v for k, v in (security or {}).items() if k != "bootstrap_servers"},
         group_id=f"dlq_replay_tool_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         enable_auto_commit=True,
         auto_offset_reset="earliest",
@@ -113,7 +117,9 @@ async def replay_from_kafka(
     try:
         logger.info("Listening on Kafka DLQ topic '%s'...", dlq_topic)
         while replayed_count < limit:
-            records = await consumer.getmany(timeout_ms=3000, max_records=min(20, limit - replayed_count))
+            records = await consumer.getmany(
+                timeout_ms=3000, max_records=min(20, limit - replayed_count)
+            )
             if not records:
                 logger.info("No more messages found on DLQ topic.")
                 break
@@ -128,16 +134,25 @@ async def replay_from_kafka(
                         continue
 
                     raw_payload = val.get("raw_payload") or val
-                    raw_key = val.get("raw_key") or (msg.key.decode("utf-8") if msg.key else "unknown_key")
+                    raw_key = val.get("raw_key") or (
+                        msg.key.decode("utf-8") if msg.key else "unknown_key"
+                    )
 
                     if site_id:
-                        event_site = raw_payload.get("site_id") if isinstance(raw_payload, dict) else None
+                        event_site = (
+                            raw_payload.get("site_id") if isinstance(raw_payload, dict) else None
+                        )
                         if event_site != site_id and not raw_key.startswith(f"{site_id}_"):
                             continue
 
                     await publisher.publish(topic=target_topic, key=raw_key, value=raw_payload)
                     replayed_count += 1
-                    logger.info("Replayed message offset %d (key=%s) -> %s", msg.offset, raw_key, target_topic)
+                    logger.info(
+                        "Replayed message offset %d (key=%s) -> %s",
+                        msg.offset,
+                        raw_key,
+                        target_topic,
+                    )
 
                     if replayed_count >= limit:
                         break

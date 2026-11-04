@@ -14,7 +14,6 @@ class Settings(DatabaseSettings, KafkaSettings, AppSettings):
     def validate_configuration(self) -> "Settings":
         """Validate relationships between configuration values."""
 
-
         # The services actually deployed (docker-compose) use RAW_WRITER / CLEAN_PROCESSOR groups.
         # Sharing one group would split the topic between them so each layer misses events.
         if self.KAFKA_GROUP_RAW_WRITER == self.KAFKA_GROUP_CLEAN_PROCESSOR:

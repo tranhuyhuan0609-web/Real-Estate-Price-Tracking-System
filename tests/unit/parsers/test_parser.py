@@ -72,13 +72,16 @@ def test_safe_helpers():
 
 def test_extract_legal_status():
     assert extract_legal_status("Nhà đẹp sổ đỏ chính chủ sang tên ngay") == "Sổ đỏ/hồng chính chủ"
-    assert extract_legal_status("Căn hộ hợp đồng mua bán trực tiếp chủ đầu tư") == "Hợp đồng mua bán"
+    assert (
+        extract_legal_status("Căn hộ hợp đồng mua bán trực tiếp chủ đầu tư") == "Hợp đồng mua bán"
+    )
     assert extract_legal_status("Đang chờ sổ phân lô") == "Chờ cấp sổ"
     assert extract_legal_status("Nhà giấy tờ tay xây dựng kiên cố") == "Giấy viết tay/Vi bằng"
 
 
 def test_parser_with_meeyland_sample(seed_row):
     from realestate.infrastructure.persistence.postgres.config_mapping import row_to_config
+
     config = row_to_config(seed_row)
     parser = ListingParser(config)
 
@@ -134,6 +137,7 @@ def test_parser_with_meeyland_sample(seed_row):
 
 def test_missing_id_raises_listing_key_error_instead_of_none_string(seed_row):
     from realestate.infrastructure.persistence.postgres.config_mapping import row_to_config
+
     config = row_to_config(seed_row)
     parser = ListingParser(config)
 
@@ -150,6 +154,7 @@ def test_missing_id_raises_listing_key_error_instead_of_none_string(seed_row):
 
 def test_parser_extracts_verified_advertiser(seed_row):
     from realestate.infrastructure.persistence.postgres.config_mapping import row_to_config
+
     config = row_to_config(seed_row)
     parser = ListingParser(config)
 
@@ -174,6 +179,7 @@ def test_parser_extracts_verified_advertiser(seed_row):
 
 def test_parser_extracts_media_urls_only(seed_row):
     from realestate.infrastructure.persistence.postgres.config_mapping import row_to_config
+
     config = row_to_config(seed_row)
     parser = ListingParser(config)
 
@@ -196,6 +202,7 @@ def test_parser_extracts_media_urls_only(seed_row):
 
 def test_parser_prioritizes_contact_phone_advertiser(seed_row):
     from realestate.infrastructure.persistence.postgres.config_mapping import row_to_config
+
     config = row_to_config(seed_row)
     parser = ListingParser(config)
 
@@ -246,6 +253,7 @@ def test_road_width_regex_nuances(seed_row):
 
 def test_property_type_extended_mappings(seed_row):
     from realestate.infrastructure.persistence.postgres.config_mapping import row_to_config
+
     config = row_to_config(seed_row)
     parser = ListingParser(config)
 
@@ -267,7 +275,9 @@ def test_property_type_extended_mappings(seed_row):
             "typeOfHouse": {"value": raw_type},
         }
         parsed = parser.parse_item(raw_item)
-        assert parsed.property_type == expected_enum, f"Failed for {raw_type}: got {parsed.property_type}, expected {expected_enum}"
+        assert parsed.property_type == expected_enum, (
+            f"Failed for {raw_type}: got {parsed.property_type}, expected {expected_enum}"
+        )
 
 
 def test_parse_vietnamese_phone_variations():
@@ -310,25 +320,30 @@ def test_extract_dimensions():
 
 def test_parser_dimension_fallback(seed_row):
     from realestate.infrastructure.persistence.postgres.config_mapping import row_to_config
+
     config = row_to_config(seed_row)
     parser = ListingParser(config)
 
     # Case 1: facade_m and depth_m not in raw payload, extracted from title
-    item = parser.parse_item({
-        "code": 9991,
-        "title": "Bán nhà 5x20m đường ô tô tránh",
-        "description": "Nhà đẹp chính chủ",
-    })
+    item = parser.parse_item(
+        {
+            "code": 9991,
+            "title": "Bán nhà 5x20m đường ô tô tránh",
+            "description": "Nhà đẹp chính chủ",
+        }
+    )
     assert item.facade_m == 5.0
     assert item.depth_m == 20.0
 
     # Case 2: facade_m and depth_m explicitly in payload, not overridden
-    item2 = parser.parse_item({
-        "code": 9992,
-        "title": "Bán nhà 5x20m đường ô tô tránh",
-        "facade": 6.5,
-        "depth": 22.0,
-    })
+    item2 = parser.parse_item(
+        {
+            "code": 9992,
+            "title": "Bán nhà 5x20m đường ô tô tránh",
+            "facade": 6.5,
+            "depth": 22.0,
+        }
+    )
     assert item2.facade_m == 6.5
     assert item2.depth_m == 22.0
 
@@ -390,16 +405,36 @@ def test_parse_vietnamese_price_comprehensive():
 
 def test_parse_vietnamese_datetime():
 
+    from zoneinfo import ZoneInfo
+
     from realestate.infrastructure.crawler.parsing.listing_parser import parse_vietnamese_datetime
 
-    # 1. VN date format
+    # 1. VN date format (interpreted in Vietnam timezone, returned in UTC)
     dt = parse_vietnamese_datetime("30/10/2026")
     assert dt is not None
-    assert dt.year == 2026 and dt.month == 10 and dt.day == 30
+    assert dt.tzinfo == timezone.utc
+    assert dt.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).year == 2026
+    assert dt.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).month == 10
+    assert dt.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).day == 30
 
     dt = parse_vietnamese_datetime("30/10/2026 14:30:00")
     assert dt is not None
-    assert dt.hour == 14 and dt.minute == 30
+    assert dt.tzinfo == timezone.utc
+    assert dt.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).hour == 14
+    assert dt.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).minute == 30
+    assert dt.hour == 7 and dt.minute == 30
+
+    # Custom timezone support (e.g. UTC source)
+    dt_utc = parse_vietnamese_datetime("30/10/2026 14:30:00", default_tz=timezone.utc)
+    assert dt_utc.hour == 14 and dt_utc.minute == 30
+
+    # Naive ISO conversion to default_tz
+    dt_iso_naive = parse_vietnamese_datetime("2026-10-30T14:30:00")
+    assert dt_iso_naive.hour == 7 and dt_iso_naive.minute == 30
+
+    # Aware ISO conversion
+    dt_iso_aware = parse_vietnamese_datetime("2026-10-30T14:30:00+00:00")
+    assert dt_iso_aware.hour == 14 and dt_iso_aware.minute == 30
 
     # 2. Relative time strings
     dt_min = parse_vietnamese_datetime("15 phút trước")
@@ -441,11 +476,13 @@ def test_extract_phone_and_email_fallback(seed_row):
     parser = ListingParser(config)
 
     # Item with phone and email embedded inside description only
-    item = parser.parse_item({
-        "code": 12345,
-        "title": "Bán nhà Tân Bình",
-        "description": "Nhà đẹp chính chủ. Alo ngay 0988.999.888 gặp Nam. Email: nam.bds@gmail.com",
-    })
+    item = parser.parse_item(
+        {
+            "code": 12345,
+            "title": "Bán nhà Tân Bình",
+            "description": "Nhà đẹp chính chủ. Alo ngay 0988.999.888 gặp Nam. Email: nam.bds@gmail.com",
+        }
+    )
     assert item.advertiser is not None
     assert item.advertiser.phone == "0988999888"
     assert item.advertiser.email == "nam.bds@gmail.com"
@@ -469,12 +506,14 @@ def test_mapping_precedence_over_same_named_raw_keys(seed_row):
     parser = ListingParser(config)
 
     # Raw item contains both a raw key named 'category' (e.g. 1050) AND 'type' ('u')
-    item = parser.parse_item({
-        "code": 9999,
-        "title": "Cho thuê phòng trọ",
-        "category": 1050,  # Must NOT override the mapped path 'type'
-        "type": "u",       # Must be mapped to 'rent'
-    })
+    item = parser.parse_item(
+        {
+            "code": 9999,
+            "title": "Cho thuê phòng trọ",
+            "category": 1050,  # Must NOT override the mapped path 'type'
+            "type": "u",  # Must be mapped to 'rent'
+        }
+    )
     assert item.category == Category.RENT
 
 
@@ -496,12 +535,14 @@ def test_parser_extracts_external_id_from_urls_with_ward_slugs(seed_row):
     config = row_to_config(mogi_row)
     parser = ListingParser(config)
 
-    item = parser.parse_item({
-        "url": "https://mogi.vn/quan-go-vap/mua-nha-mat-tien-pho/ban-nha-mat-tien-3-tang-6-5x40-tien-265-nguyen-van-luong-p10-go-vap-id22749307",
-        "title": "Bán nhà mặt tiền 3 tầng Nguyễn Văn Lượng p10",
-        "totalPrice": "45000000000",
-        "area": "256",
-    })
+    item = parser.parse_item(
+        {
+            "url": "https://mogi.vn/quan-go-vap/mua-nha-mat-tien-pho/ban-nha-mat-tien-3-tang-6-5x40-tien-265-nguyen-van-luong-p10-go-vap-id22749307",
+            "title": "Bán nhà mặt tiền 3 tầng Nguyễn Văn Lượng p10",
+            "totalPrice": "45000000000",
+            "area": "256",
+        }
+    )
     assert item.external_id == "22749307"
     assert item.listing_key == "mogi_22749307"
 
@@ -516,12 +557,14 @@ def test_parser_extracts_external_id_from_urls_with_ward_slugs(seed_row):
     }
     bds_config = row_to_config(bds_row)
     bds_parser = ListingParser(bds_config)
-    bds_item = bds_parser.parse_item({
-        "url": "https://bds.com.vn/view-cao-thoang-p519188.html",
-        "title": "View cao thoáng",
-        "totalPrice": "1000000000",
-        "area": "100",
-    })
+    bds_item = bds_parser.parse_item(
+        {
+            "url": "https://bds.com.vn/view-cao-thoang-p519188.html",
+            "title": "View cao thoáng",
+            "totalPrice": "1000000000",
+            "area": "100",
+        }
+    )
     assert bds_item.external_id == "519188"
     assert bds_item.listing_key == "bds_com_vn_519188"
 
@@ -544,58 +587,60 @@ def test_infer_property_type_and_category_fallbacks(seed_row):
     parser = ListingParser(config)
 
     # 1. Apartment rent
-    it1 = parser.parse_item({
-        "url": "/cho-thue-can-ho-chung-cu-vinhomes-id101",
-        "title": "Cho thuê căn hộ chung cư 2PN",
-        "totalPrice": "15000000",
-        "area": "70",
-        "contact_name": "Trần Thị Mai",
-    })
+    it1 = parser.parse_item(
+        {
+            "url": "/cho-thue-can-ho-chung-cu-vinhomes-id101",
+            "title": "Cho thuê căn hộ chung cư 2PN",
+            "totalPrice": "15000000",
+            "area": "70",
+            "contact_name": "Trần Thị Mai",
+        }
+    )
     assert it1.property_type == PropertyType.APARTMENT
     assert it1.category == Category.RENT
     assert it1.advertiser.name == "Trần Thị Mai"
     assert it1.advertiser.advertiser_id.startswith("adv_meeyland_")
 
     # 2. Commercial
-    it2 = parser.parse_item({
-        "url": "/cho-thue-van-phong-duy-tan-id102",
-        "title": "Cho thuê mặt bằng kinh doanh văn phòng",
-        "totalPrice": "25000000",
-        "area": "120",
-    })
+    it2 = parser.parse_item(
+        {
+            "url": "/cho-thue-van-phong-duy-tan-id102",
+            "title": "Cho thuê mặt bằng kinh doanh văn phòng",
+            "totalPrice": "25000000",
+            "area": "120",
+        }
+    )
     assert it2.property_type == PropertyType.COMMERCIAL
     assert it2.category == Category.RENT
 
     # 3. Land sale
-    it3 = parser.parse_item({
-        "url": "/ban-dat-nen-tho-cu-id103",
-        "title": "Bán đất thổ cư 100m2",
-        "totalPrice": "2000000000",
-        "area": "100",
-    })
+    it3 = parser.parse_item(
+        {
+            "url": "/ban-dat-nen-tho-cu-id103",
+            "title": "Bán đất thổ cư 100m2",
+            "totalPrice": "2000000000",
+            "area": "100",
+        }
+    )
     assert it3.property_type == PropertyType.LAND
     assert it3.category == Category.SALE
 
     # 4. Villa
-    it4 = parser.parse_item({
-        "url": "/ban-biet-thu-vinhomes-id104",
-        "title": "Bán biệt thự song lập",
-        "totalPrice": "30000000000",
-        "area": "250",
-    })
+    it4 = parser.parse_item(
+        {
+            "url": "/ban-biet-thu-vinhomes-id104",
+            "title": "Bán biệt thự song lập",
+            "totalPrice": "30000000000",
+            "area": "250",
+        }
+    )
     assert it4.property_type == PropertyType.VILLA
     assert it4.category == Category.SALE
 
 
-
-
-
-
-
-
-
 def test_strict_phone_parsing():
     from realestate.infrastructure.crawler.parsing.listing_parser import parse_vietnamese_phone
+
     # Valid mobile
     assert parse_vietnamese_phone("0901234567") == "0901234567"
     assert parse_vietnamese_phone("+84 901 234 567") == "0901234567"
@@ -612,6 +657,7 @@ def test_strict_phone_parsing():
 
 def test_strict_area_parsing():
     from realestate.infrastructure.crawler.parsing.listing_parser import parse_vietnamese_area
+
     # Valid pure numbers
     assert parse_vietnamese_area(85.5) == 85.5
     assert parse_vietnamese_area("100") == 100.0
@@ -627,6 +673,7 @@ def test_strict_area_parsing():
 
 def test_area_thousand_separators():
     from realestate.infrastructure.crawler.parsing.listing_parser import parse_vietnamese_area
+
     # Vietnamese thousand separator with dot or comma
     assert parse_vietnamese_area("1.200 m²") == 1200.0
     assert parse_vietnamese_area("1.675 m²") == 1675.0
@@ -640,6 +687,7 @@ def test_area_thousand_separators():
 
 def test_price_sanity_bounds_and_unit_price():
     from realestate.infrastructure.crawler.parsing.listing_parser import parse_vietnamese_price
+
     # Outlier / typo > 5,000 tỷ
     vnd, pm2 = parse_vietnamese_price("15666000 tỷ", area=348.0)
     assert vnd is None
@@ -659,6 +707,7 @@ def test_price_sanity_bounds_and_unit_price():
 def test_category_rental_title_override(seed_row):
     from realestate.domain.entities import Category
     from realestate.infrastructure.persistence.postgres.config_mapping import row_to_config
+
     config = row_to_config(seed_row)
     parser = ListingParser(config)
 
@@ -674,6 +723,7 @@ def test_category_rental_title_override(seed_row):
 
 def test_vietnam_coordinates_bounding_box(seed_row):
     from realestate.infrastructure.persistence.postgres.config_mapping import row_to_config
+
     config = row_to_config(seed_row)
     parser = ListingParser(config)
 
@@ -721,7 +771,12 @@ def test_clean_email_rules():
     assert clean_email("chatpostinfo_manhdung3107@gmail.com") == "manhdung3107@gmail.com"
     assert clean_email("pj_manhdung3107@gmail.com") == "manhdung3107@gmail.com"
     # Cafeland avatar filename
-    assert clean_email("https://nhadat.cafeland.vn/avatar/thoaii.propty@gmail.com-1706586592-nhadat.cafeland.vn.jpg") == "thoaii.propty@gmail.com"
+    assert (
+        clean_email(
+            "https://nhadat.cafeland.vn/avatar/thoaii.propty@gmail.com-1706586592-nhadat.cafeland.vn.jpg"
+        )
+        == "thoaii.propty@gmail.com"
+    )
     # Masked email with asterisks MUST be rejected
     assert clean_email("hoan***@gmail.com") is None
     assert clean_email("a***b@yahoo.com") is None
@@ -742,16 +797,18 @@ def test_unmask_email_from_description_when_field_masked(seed_row):
     parser = ListingParser(config)
 
     # Item where structured contact.email is masked with *, but description contains real unmasked email
-    item = parser.parse_item({
-        "code": 8888,
-        "title": "Bán nhà quận 1 chính chủ",
-        "contact": {
-            "fullName": "Nguyễn Hoàng",
-            "phones": ["0903123456"],
-            "email": "hoang***@gmail.com",
-        },
-        "description": "Bán gấp nhà trung tâm Q1. Liên hệ chính chủ qua email: hoang.bds.q1@gmail.com hoặc SĐT 0903.123.456",
-    })
+    item = parser.parse_item(
+        {
+            "code": 8888,
+            "title": "Bán nhà quận 1 chính chủ",
+            "contact": {
+                "fullName": "Nguyễn Hoàng",
+                "phones": ["0903123456"],
+                "email": "hoang***@gmail.com",
+            },
+            "description": "Bán gấp nhà trung tâm Q1. Liên hệ chính chủ qua email: hoang.bds.q1@gmail.com hoặc SĐT 0903.123.456",
+        }
+    )
 
     assert item.advertiser is not None
     assert item.advertiser.phone == "0903123456"

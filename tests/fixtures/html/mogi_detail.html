@@ -1,0 +1,1634 @@
+<!DOCTYPE html>
+<html><body ng-app="mogiApp" class="ng-cloak1">
+
+        <div class="mogi-navbar">
+
+        <div class="mogi-navbar-container">
+
+            <div class="navbar-logo">
+
+                <a href="/"><img src="/content/Images/logo.svg" width="100" height="31" alt="Mogi.vn" title="Tìm kiếm bất động sản, nhà đất cần bán và cho thuê tại Việt Nam"></a>
+
+            </div>
+
+
+
+<div class="navbar-menu">
+
+    <a href="/tra-cuu-sau-sap-nhap" gtm-event="link" gtm-cat="menu" gtm-act="top-menu" class="merge-search">
+
+        Tra cứu thông tin sáp nhập
+
+        <span class="merge-search-menu-badge">New</span>
+
+    </a>
+
+            <a class="" href="/mua-nha-dat" gtm-event="link" gtm-cat="menu" gtm-act="top-menu">Tìm mua</a>
+
+            <a class="" href="/thue-nha-dat" gtm-event="link" gtm-cat="menu" gtm-act="top-menu">Tìm thuê</a>
+
+            <a class="" href="/gia-nha-dat" gtm-event="link" gtm-cat="menu" gtm-act="top-menu">Giá nhà đất</a>
+
+            <a href="https://pro.mogi.vn/phi-thanh-vien" gtm-event="link" gtm-cat="menu" gtm-act="top-menu" class="membership">
+
+                Phí thành viên
+
+            </a>
+
+            <a class="" href="/tim-moi-gioi" gtm-event="link" gtm-cat="menu" gtm-act="top-menu">Môi giới</a>
+
+            <a class="" href="/du-an" gtm-event="link" gtm-cat="menu" gtm-act="top-menu">Dự án</a>
+
+    <a class="hidden-xs" ng-if="!Profile.isAuth()" id="menu-signin" href="/dang-nhap" gtm-event="link" gtm-cat="menu" gtm-act="user-signin">Đăng nhập</a>
+
+</div>
+
+    <div class="navbar-searchbox"></div>
+
+
+
+
+
+<div class="navbar-user">
+
+    <div ng-cloak="" ng-if="Profile.isAuth()" class="navbar-user-profile">
+
+        <a href="javascript:void()" data-toggle="dropdown" role="button" aria-expanded="false" gtm-event="all" gtm-cat="menu" gtm-act="user-menu">
+
+            <span class="avatar" ng-bind-html="Profile.getAvatar()">
+
+            </span>
+
+            <span class="dot" ng-if="Profile.Message.HasValue"></span>
+
+            <div class="last-name">
+
+                <div ng-bind="Profile.Data.LastName"></div>
+
+            </div>
+
+        </a>
+
+        <div class="personel-menu">
+
+            <div>
+
+                <div class="personel">
+
+                    <div class="personal-avatar" ng-bind-html="Profile.getAvatar()">
+
+                    </div>
+
+                    <div class="info">
+
+                        <div class="name">
+
+                            <div class="info-name">
+
+                                <div ng-bind="Profile.Data.LastName + ' ' +Profile.Data.FirstName"></div>
+
+                            </div>
+
+                            <span ng-if="!Profile.isNormal()" class="info-check-icon">
+
+                                
+
+                            </span>
+
+                        </div>
+
+                        <div ng-if="!Profile.isNormal()" class="user-type">
+
+                            <a href="/trang-ca-nhan/mogipro" ng-bind-html="Profile.getUserTypeLabel()"></a>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div ng-if="!Profile.isNormal() &amp;&amp; Profile.Data.SupportStaff !== null" class="support">
+
+                    <div class="support-label">Nhân viên chăm sóc</div>
+
+                    <div class="support-info">
+
+                        <span class="full-name" ng-bind="Profile.Data.SupportStaff.FullName"></span>
+
+                        <span class="info-mobile" ng-bind="Profile.Data.SupportStaff.Mobile"></span>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+
+
+
+
+
+
+
+<div ng-class="Profile.isNormal() === true || (Profile.isNormal() === false &amp;&amp; Profile.Data.SupportStaff === null) ? ['main-menu border-top'] : ['main-menu']">
+
+    
+
+
+
+    <div>
+
+        <a href="/trang-ca-nhan/quan-ly-tin" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-managed-post">
+
+            <span class="main-menu-icon"></span>
+
+            <span>Quản lý tin bất động sản</span>
+
+        </a>
+
+    </div>
+
+    <div>
+
+        <a href="/trang-ca-nhan/thong-tin-ca-nhan" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-profile">
+
+            <span class="main-menu-icon"></span>
+
+            <span>Thông tin tài khoản</span>
+
+        </a>
+
+    </div>
+
+    <div>
+
+        <a href="/trang-ca-nhan/tim-kiem-da-luu#message" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-alert">
+
+            <span class="main-menu-icon"></span>
+
+            <span>Thông báo</span>
+
+            <span class="badge-total" ng-bind="Profile.Message.Total" ng-if="Profile.Message.HasValue"></span>
+
+        </a>
+
+    </div>
+
+    <div>
+
+        <a href="/trang-ca-nhan/bat-dong-san-yeu-thich" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-favorite">
+
+            <span class="main-menu-icon"></span>
+
+            <span>Bất động sản đã lưu</span>
+
+        </a>
+
+    </div>
+
+    <div>
+
+        <a href="/trang-ca-nhan/tim-kiem-da-luu" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-saved-search">
+
+            <span class="main-menu-icon"></span>
+
+            <span>Tìm kiếm đã lưu</span>
+
+        </a>
+
+    </div>
+
+</div>
+
+<div class="action-menu border-top">
+
+    <div>
+
+        <a href="/trang-ca-nhan/doi-mat-khau" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-password">
+
+            <span>Thay đổi mật khẩu</span>
+
+        </a>
+
+    </div>
+
+    <div>
+
+        <a href="/logoff" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-signout">
+
+            <span>Thoát</span>
+
+        </a>
+
+    </div>
+
+</div>
+
+        </div>
+
+    </div>
+
+    <a class="navbar-user-posting" href="/dang-tin" gtm-event="link" gtm-cat="posting" gtm-act="add-posting">Đăng tin mới</a>
+
+</div>
+
+<div class="navbar-hamburger">
+
+    <i class="fa fa-bars" ng-click="openSlideMenu()"></i>
+
+
+
+
+
+<div class="hamburger-menu slideMenu" id="mogi-slide-menu">
+
+    <div class="close-icon" ng-click="closeSlideMenu()"><i class="fa fa-close" aria-hidden="true"></i></div>
+
+    <div ng-if="Profile.isAuth()">
+
+        <div class="info-detail">
+
+            <div class="detail-avatar" ng-bind-html="Profile.getAvatar()">
+
+            </div>
+
+            <div class="detail-name">
+
+                <div class="name-fullname">
+
+                    <div>
+
+                        <div ng-bind="Profile.Data.LastName + ' ' +Profile.Data.FirstName"></div>
+
+                    </div>
+
+                    <div ng-if="!Profile.isNormal()">
+
+                        
+
+                    </div>
+
+                </div>
+
+                <div ng-if="!Profile.isNormal()" class="name-user-type">
+
+                    <a href="/trang-ca-nhan/mogipro" ng-bind-html="Profile.getUserTypeLabel()"></a>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="slideMenu-user-posting">
+
+            <a href="/dang-tin" gtm-event="link" gtm-cat="posting" gtm-act="add-posting">Đăng tin mới</a>
+
+        </div>
+
+        <div ng-if="!Profile.isNormal() &amp;&amp; Profile.Data.SupportStaff !== null" class="info-support">
+
+            <div class="support-name">
+
+                <div>Nhân viên chăm sóc</div>
+
+                <div ng-bind="Profile.Data.SupportStaff.FullName"></div>
+
+            </div>
+
+            <div class="support-icon-phone" ng-click="Profile.openDialer()" ng-if="Profile.Data.SupportStaff.Mobile !== '' &amp;&amp; Profile.Data.SupportStaff.Mobile !== null">
+
+                
+
+            </div>
+
+            <div class="support-icon-zalo" ng-click="Profile.openZalo()" ng-if="Profile.Data.SupportStaff.Zalo !== null &amp;&amp; Profile.Data.SupportStaff.Zalo !== ''">
+
+                
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div ng-if="!Profile.isAuth()" class="sign-in-btn">
+
+        <div class="sign-in">
+
+            <span>
+
+                <a href="/dang-nhap" gtm-event="link" gtm-cat="menu" gtm-act="user-signin">Đăng nhập</a>
+
+            </span>
+
+        </div>
+
+        <div class="sign-up">
+
+            <span>
+
+                <a href="/dang-nhap" gtm-event="link" gtm-cat="menu" gtm-act="user-signin">Đăng ký</a>
+
+            </span>
+
+        </div>
+
+    </div>
+
+    <div class="menu-tiles">
+
+                <div class="tile-item">
+
+                    <a href="/mua-nha-dat" gtm-event="link" gtm-cat="menu" gtm-act="top-menu">
+
+                        <div class="tile-icon">
+
+                            
+
+                        </div>
+
+                        <div class="tile-title"> Tìm mua</div>
+
+                    </a>
+
+                </div>
+
+                <div class="tile-item">
+
+                    <a href="/thue-nha-dat" gtm-event="link" gtm-cat="menu" gtm-act="top-menu">
+
+                        <div class="tile-icon">
+
+                            
+
+                        </div>
+
+                        <div class="tile-title"> Tìm thuê</div>
+
+                    </a>
+
+                </div>
+
+                <div class="tile-item">
+
+                    <a href="/gia-nha-dat" gtm-event="link" gtm-cat="menu" gtm-act="top-menu">
+
+                        <div class="tile-icon">
+
+                            
+
+                        </div>
+
+                        <div class="tile-title"> Giá nhà đất</div>
+
+                    </a>
+
+                </div>
+
+                <div class="tile-item">
+
+                    <a href="https://pro.mogi.vn/phi-thanh-vien" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-regis-zone">
+
+                        <div class="tile-icon">
+
+                            
+
+                        </div>
+
+                        <div class="tile-title">Phí thành viên</div>
+
+                    </a>
+
+                </div>
+
+                <div class="tile-item">
+
+                    <a href="/tim-moi-gioi" gtm-event="link" gtm-cat="menu" gtm-act="top-menu">
+
+                        <div class="tile-icon">
+
+                            
+
+                        </div>
+
+                        <div class="tile-title"> Môi giới</div>
+
+                    </a>
+
+                </div>
+
+                <div class="tile-item">
+
+                    <a href="/du-an" gtm-event="link" gtm-cat="menu" gtm-act="top-menu">
+
+                        <div class="tile-icon">
+
+                            
+
+                        </div>
+
+                        <div class="tile-title"> Dự án</div>
+
+                    </a>
+
+                </div>
+
+        <div class="tile-item">
+
+            <a href="/tra-cuu-sau-sap-nhap" gtm-event="link" gtm-cat="menu" gtm-act="top-menu">
+
+                <div class="tile-icon">
+
+                    <img src="/Content/Images/icons/icon-mobi-research.png" alt="icon-research">
+
+                    <span class="merge-search-badge-mobile">New</span>
+
+                </div>
+
+                <div class="tile-title">
+
+                    Tra cứu sáp nhập
+
+                </div>
+
+            </a>
+
+        </div>
+
+    </div>
+
+    <div ng-if="Profile.isAuth()">
+
+
+
+
+
+
+
+
+
+<div ng-class="Profile.isNormal() === true || (Profile.isNormal() === false &amp;&amp; Profile.Data.SupportStaff === null) ? ['main-menu border-top'] : ['main-menu']">
+
+    
+
+
+
+    <div>
+
+        <a href="/trang-ca-nhan/quan-ly-tin" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-managed-post">
+
+            <span class="main-menu-icon"></span>
+
+            <span>Quản lý tin bất động sản</span>
+
+        </a>
+
+    </div>
+
+    <div>
+
+        <a href="/trang-ca-nhan/thong-tin-ca-nhan" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-profile">
+
+            <span class="main-menu-icon"></span>
+
+            <span>Thông tin tài khoản</span>
+
+        </a>
+
+    </div>
+
+    <div>
+
+        <a href="/trang-ca-nhan/tim-kiem-da-luu#message" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-alert">
+
+            <span class="main-menu-icon"></span>
+
+            <span>Thông báo</span>
+
+            <span class="badge-total" ng-bind="Profile.Message.Total" ng-if="Profile.Message.HasValue"></span>
+
+        </a>
+
+    </div>
+
+    <div>
+
+        <a href="/trang-ca-nhan/bat-dong-san-yeu-thich" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-favorite">
+
+            <span class="main-menu-icon"></span>
+
+            <span>Bất động sản đã lưu</span>
+
+        </a>
+
+    </div>
+
+    <div>
+
+        <a href="/trang-ca-nhan/tim-kiem-da-luu" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-saved-search">
+
+            <span class="main-menu-icon"></span>
+
+            <span>Tìm kiếm đã lưu</span>
+
+        </a>
+
+    </div>
+
+</div>
+
+<div class="action-menu border-top">
+
+    <div>
+
+        <a href="/trang-ca-nhan/doi-mat-khau" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-password">
+
+            <span>Thay đổi mật khẩu</span>
+
+        </a>
+
+    </div>
+
+    <div>
+
+        <a href="/logoff" rel="nofollow" gtm-event="link" gtm-cat="menu" gtm-act="user-menu-signout">
+
+            <span>Thoát</span>
+
+        </a>
+
+    </div>
+
+</div>
+
+    </div>
+
+    <div ng-if="Profile.isAuth()" class="slideMenu-cover"></div>
+
+</div>
+
+    <div id="mogi-slide-overlay" ng-click="closeSlideMenu()"></div>
+
+</div>
+
+
+
+
+
+
+
+        </div>
+
+    </div>
+
+
+
+    
+
+
+
+<div id="mogi-page-content" ng-controller="propertyDetailController" class="mg-property-listing" ng-init="Init()">
+
+
+
+    <div id="breadcrumb" class="clearfix">
+
+
+
+<ul class="breadcrumb clearfix" vocab="https://schema.org/" typeof="BreadcrumbList">
+
+            <li property="itemListElement" typeof="ListItem"><a property="item" typeof="WebPage" href="/" title="Mogi" gtm-event="link" gtm-cat="listing" gtm-act="breadcrumb"><span property="name">Mogi</span></a></li>
+
+            <li property="itemListElement" typeof="ListItem"><a property="item" typeof="WebPage" href="/mua-nha-dat" title="Mua bán nhà đất" gtm-event="link" gtm-cat="listing" gtm-act="breadcrumb"><span property="name">Mua bán nhà đất</span></a></li>
+
+            <li property="itemListElement" typeof="ListItem"><a property="item" typeof="WebPage" href="/ho-chi-minh/mua-duong-noi-bo" title="TPHCM" gtm-event="link" gtm-cat="listing" gtm-act="breadcrumb"><span property="name">TPHCM</span></a></li>
+
+            <li property="itemListElement" typeof="ListItem"><a property="item" typeof="WebPage" href="/ho-chi-minh/quan-1/mua-duong-noi-bo" title="Quận 1" gtm-event="link" gtm-cat="listing" gtm-act="breadcrumb"><span property="name">Quận 1</span></a></li>
+
+            <li class="active" property="itemListElement" typeof="ListItem"><span property="name">Bán Nhà đường nội bộ Đồng Khởi</span></li>
+
+</ul>
+
+        <div ng-if="SearchNav.show" class="search-nav">
+
+            <a ng-href="{{SearchNav.url}}" class="search-back" gtm-event="detail" gtm-cat="search-nav" gtm-act="listing">Về danh sách</a>
+
+            <a ng-href="{{SearchNav.nextUrl}}" ng-click="SearchNav.getNextUrl()" ng-class="{'disabled':!SearchNav.next}" class="search-paging" gtm-event="detail" gtm-cat="search-nav" gtm-act="next">Tin tiếp</a>
+
+        </div>
+
+    </div>
+
+    <div class="property-detail clearfix">
+
+
+
+        <div class="property-detail-main">
+
+            <div class="main-intro">
+
+                <div id="gallery" class="clearfix">
+
+                        <div id="top-media" class="top-media owl-carousel" ng-non-bindable="">
+
+                            
+
+<div class="media-item"><img src="https://cloud.mogi.vn/images/2026/08/23/424/61a1eb9503ff44f3b09d075d474d8ff2.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/424/da2490c9ac0c4e859d3eabae34d53105.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/425/a62e774af94f4837912d0a4306af0f10.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/426/b9faf53bff244fea95536167adcfe71d.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/426/71456cfc2fb3481eb38cfafa1d4c7182.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/427/c46f9d622e35414fb2d6e49cf500a267.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/428/34addfdec8734bdcab3f65cae150f739.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/428/cf2b90119c9e4bd891831c6a4069049b.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/429/ad640f7b130d480cb8aeecb65c035238.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/429/83f4eb2f52c745d8b9d03ff0b8d0e205.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/420/d4a4cdde4d2b46b6b548d95660815799.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/421/5fc2dbabdbb047af8d672ac76cb0733d.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/421/e91c5f66e90847aaae1727b23c92c935.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/422/3163d84f6fb94b3b94ce279d3bc79729.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/423/af545172e676444c99c9640d935d2f58.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/423/238be6ea37eb4ef9a2575cc9d5d324a3.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/424/be895bdaa6f54df6a16092e9e11bb9d1.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/425/56ad8f1ed0004379bfb8daf648f4d2c3.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/425/bcf5dbc6831a44de9e58b0cbac63b3df.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+<div class="media-item"><img class="lozad" data-src="https://cloud.mogi.vn/images/2026/08/23/426/e3fa5bcc390d4a1da448dd0b0cc40581.jpg" alt="Hình ảnh Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố"></div>
+
+                        </div>
+
+                            <div class="gallery-counter" ng-bind="topMedia.counterText"></div>
+
+                        <div class="clearfix"></div>
+
+                    </div>
+
+                </div>
+
+
+
+            <div class="main-info">
+
+                <div class="title">
+
+                        <span class="">Bán gấp</span>
+
+                    <h1>Căn Hộ Đồng Khởi – Quận 1 | View trực diện Nhà Hát Thành Phố</h1>
+
+                </div>
+
+                <div class="address"> Đồng Khởi, Phường Bến Nghé, Quận 1, TPHCM</div>
+
+                <div class="price">83 tỷ</div>
+
+                <div class="agent-command">
+
+                    <div class="command-favorite" ng-click="Favorite.addRemove(22751689, null, data.tracking)" ng-class="{favorited: Favorite.items[22751689]}">
+
+                        <i class="fa fa-heart"></i><span>Lưu tin</span>
+
+                    </div>
+
+                        <mg-social-share svg-url="/content/fonts/mogi-icons.svg"></mg-social-share>
+
+                </div>
+
+                <h2 class="info-title">Thông tin chính</h2>
+
+                <div class="info-attrs clearfix">
+
+                        <div class="info-attr clearfix">
+
+                            <span>Diện tích sử dụng</span>
+
+                            <span>91,25 m<sup>2</sup></span>
+
+                        </div>
+
+
+
+                        <div class="info-attr clearfix">
+
+                            <span>Diện tích đất</span>
+
+                            <span>91,25 m<sup>2</sup> (4,75x23,6)</span>
+
+                        </div>
+
+
+
+                        <div class="info-attr clearfix">
+
+                            <span>Phòng ngủ</span>
+
+                            <span>1</span>
+
+                        </div>
+
+
+
+                        <div class="info-attr clearfix">
+
+                            <span>Nhà tắm</span>
+
+                            <span>2</span>
+
+                        </div>
+
+
+
+                        <div class="info-attr clearfix">
+
+                            <span>Pháp lý</span>
+
+                            <span>Sổ đỏ</span>
+
+                        </div>
+
+                    <div class="info-attr clearfix">
+
+                        <span>Ngày đăng</span>
+
+                        <span>04/11/2026</span>
+
+                    </div>
+
+                    <div class="info-attr clearfix">
+
+                        <span>Mã BĐS</span>
+
+                        <span>22751689</span>
+
+                    </div>
+
+                </div>
+
+                <h2 class="info-title">Giới thiệu</h2>
+
+                <div class="info-content-body">CĂN HỘ ĐỒNG KHỞI – QUẬN 1 | VIEW TRỰC DIỆN NHÀ HÁT THÀNH PHỐ<br><br>Căn hộ lầu 1, chung cư mặt tiền Đồng Khởi, Quận 1, vị trí lõi trung tâm TP.HCM.<br><br>* Diện tích: 91,25m² sử dụng<br>* View: trực diện Nhà Hát Thành Phố<br>* Pháp lý: chính chủ, sổ hồng riêng, không tranh chấp<br>* Giá kỳ vọng: 900 triệu/m², có thương lượng<br>* Tiềm năng: vị trí hiếm, phù hợp đầu tư dài hạn hoặc khai thác thương mại<br><br>Khu vực Đồng Khởi – trung tâm quỹ đất giá trị cao, từng được nhiều nhà phát triển lớn quan tâm.<br><br>Chính chủ – thiện chí giao dịch.<br>Liên hệ để xem sổ và vị trí thực tế.</div>
+
+                <div class="report" data-toggle="modal" data-target="#report" ng-click="Report.Open()" id="22751689" gtm-event="all" gtm-cat="detail" gtm-act="report">
+
+                    <span>Báo vi phạm</span><i class="fa fa-exclamation-triangle"></i>
+
+                </div>
+
+                <div class="agent-info">
+
+                    <img src="/content/images/avatar.png" alt="Nguyễn Văn A">
+
+                    <div class="agent-name">Nguyễn Văn A</div>
+
+                    <div class="agent-date">Đã tham gia: 2 tháng 13 ngày</div>
+
+                </div>
+
+                <div id="project-info"></div>
+
+                <div class="internal-links">
+
+                        <h2 class="internal-title">Có thể bạn muốn xem</h2>
+
+                        <div class="link-items">
+
+                                <a href="/ho-chi-minh/mua-nha" class="link-item" alt="Nhà TPHCM">Nhà TPHCM</a>
+
+                                <a href="/ho-chi-minh/quan-1/mua-nha" class="link-item" alt="Nhà Quận 1">Nhà Quận 1</a>
+
+                                <a href="/ho-chi-minh/quan-1/thue-nha/phuong-ben-nghe-wid10876" class="link-item" alt="Nhà Phường Bến Nghé">Nhà Phường Bến Nghé</a>
+
+                                <a href="/ho-chi-minh/quan-1/mua-nha/duong-dong-khoi-quan-1-sid2422" class="link-item" alt="Nhà Đồng Khởi">Nhà Đồng Khởi</a>
+
+                        </div>
+
+                    </div>
+
+
+
+                    <h2 class="info-title">Tiện ích xung quanh</h2>
+
+                    <div class="map-content clearfix">
+
+                        
+
+                    </div>
+
+
+
+                    <div ng-include="MarketPriceUrl"></div>                <div class="netlink-mobile-only">
+
+                    <ins class="3b35b82f" data-key="ea1c0aa189afb06a5f8c0e2c2b7e9c5d"></ins>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+
+        <div class="side-bar">
+
+            <div class="agent-widget widget">
+
+                
+
+
+
+<div class="agent-info">
+
+    <img src="/content/images/avatar.png" alt="Nguyễn Văn A">
+
+    <div class="agent-name">Nguyễn Văn A</div>
+
+    <div class="agent-date">Đã tham gia: 2 tháng 13 ngày</div>
+
+</div>
+
+<div class="agent-contact clearfix">
+
+    <a ng-href="{{IsMobile() ? 'tel:0900000001':'#'}}" gtm-event="link" gtm-cat="detail" gtm-act="mobile-call" ng-click="ClickPhone()">
+
+        
+
+        <span ng-bind="PhoneFormat('0900000003')"> 0900000002</span>
+
+        <span class="showphonetext">Bấm để hiện số</span>
+
+    </a>
+
+    <a href="#" data-toggle="modal" data-target="#message" gtm-event="link" gtm-cat="detail" gtm-act="ask" ng-click="Message.Open()">
+
+        
+
+        <span class="hidden-xs">Gửi tin nhắn</span>
+
+    </a>
+
+</div>
+
+            </div>
+
+                <div id="mortgage-widget " class="widget clearfix" ng-click="BankLoan.Open()" gtm-event="all" gtm-cat="detail" gtm-act="uob-load">
+
+                    <div class="widget-bank">
+
+                        <img src="/content/images/UOB-logo.svg" alt="Ngân hàng UOB" ng-show="BankLoan.IsShowUOB()">
+
+                        <span>Vay mua nhà</span>
+
+                    </div>
+
+                    <div class="widget-instalment" ng-bind="BankLoan.InstallmentInMillion() + ' triệu/tháng'"></div>
+
+                </div>
+
+
+
+            <div class="agent-command-widget">
+
+                <div class="command-favorite" ng-click="Favorite.addRemove(22751689, null, data.tracking)" ng-class="{favorited: Favorite.items[22751689]}">
+
+                    <i class="fa fa-heart"></i><span>Lưu tin</span>
+
+                </div>
+
+                    <mg-social-share svg-url="/content/fonts/mogi-icons.svg"></mg-social-share>
+
+            </div>
+
+            <div id="google-adsense-1">
+
+                <ins class="adsbygoogle" data-ad-client="ca-pub-3000426983537206" data-ad-slot="6045324638" data-ad-format="auto" data-full-width-responsive="true"></ins>
+
+            </div>
+
+            <div class="netlink-desktop-only">
+
+                <ins class="3b35b82f" data-key="c3b7c222703331bb3fcd801d0275e078"></ins>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="netlink-desktop-only">
+
+        <ins class="3b35b82f" data-key="833edc7dabefecb560ef0b84e220367d"></ins>
+
+    </div>
+
+
+
+    <div id="similar-properties" lazy-scroll="loadSimilar()" lazy-scroll-trigger="60" lazy-no-scroll="false">
+
+        <div ng-include="SimilarUrl" onload="loadSimilarComplete()"></div>
+
+    </div>
+
+
+
+    <div id="agent-contact" class="agent-contact">
+
+        <a ng-href="{{ShowPhone === 1 &amp;&amp; IsMobile() ? 'tel:0900000005' : '#'}}" class="fa-phone bold" gtm-event="link" gtm-cat="detail" gtm-act="mobile-call" ng-bind="PhoneFormat('0900000006')" ng-click="ClickPhone()">0900000004</a>
+
+        <a href="#" class="fa-envelope" data-toggle="modal" data-target="#message" gtm-event="link" gtm-cat="detail" gtm-act="ask" ng-click="Message.Open()" aria-label="Gửi tin nhắn"></a>
+
+    </div>
+
+    
+
+    <section id="hidden-content">
+
+        <div ng-include="SendMessageUrl"></div>
+
+
+
+        
+
+        <div id="pl-backdrop"></div>
+
+        <div id="phone-login-modal" role="dialog" aria-modal="true">
+
+            <div class="pl-dialog">
+
+                <div class="pl-content">
+
+
+
+                    
+
+                    <button type="button" class="pl-close" ng-click="PhoneLogin.close()" aria-label="Đóng">×</button>
+
+
+
+                    
+
+                    <div ng-show="PhoneLogin.step === 'phone'">
+
+                        <p class="pl-greeting">Xin chào bạn!</p>
+
+                        <h3 class="pl-title">Đăng ký / đăng nhập để tiếp tục</h3>
+
+                        <p class="pl-desc">Đăng nhập ngay để liên hệ với người đăng tin</p>
+
+
+
+                        
+
+<form action="/Account/ExternalLogin?ReturnUrl=%2Fquan-1%2Fmua-duong-noi-bo%2Fcan-ho-dong-khoi-quan-1-view-truc-dien-nha-hat-thanh-pho-id22751689" class="pl-google-form" method="post"><input name="__RequestVerificationToken" type="hidden" value="bnS6b-VcXm6-LJMo9mRaZQ-vBH6sEtXd1y2Br106mvzYvdKMmy_-5Zraao3SR7i9a_1fFsOxvpLrsnIYCnNHyMUGWrXoJh-YmANPfyVphTo1">                            <button type="submit" name="provider" value="Google" class="pl-google-btn">
+
+                                
+
+                                Đăng nhập với Google
+
+                            </button>
+
+</form>
+
+                        <div class="pl-separator"><span>Hoặc</span></div>
+
+
+
+                        
+
+                        <div class="pl-float-group">
+
+                            <div class="pl-float-label-wrap">
+
+                                <input id="pl-mobile" type="tel" ng-class="['pl-float-input', PhoneLogin.phoneError ? 'pl-input-error' : '']" placeholder=" " ng-model="PhoneLogin.mobile" ng-change="PhoneLogin.phoneError = ''" ng-keydown="$event.keyCode === 13 &amp;&amp; PhoneLogin.checkPhone()" autocomplete="tel">
+
+                                <label class="pl-float-label" for="pl-mobile">Số điện thoại <span class="pl-required">*</span></label>
+
+                            </div>
+
+                            <p class="pl-otp-err-msg" ng-show="PhoneLogin.phoneError" ng-bind="PhoneLogin.phoneError"></p>
+
+                        </div>
+
+
+
+                        <button id="pl-otp-btn" type="button" class="pl-btn-teal" ng-click="PhoneLogin.checkPhone()" ng-disabled="PhoneLogin.loading || !PhoneLogin.mobile">
+
+                            <span ng-show="!PhoneLogin.loading">Tiếp tục</span>
+
+                            <span ng-show="PhoneLogin.loading"><i class="fa fa-spinner fa-spin"></i></span>
+
+                        </button>
+
+                    </div>
+
+
+
+                    
+
+                    <div ng-show="PhoneLogin.step === 'password'">
+
+                        <p class="pl-greeting">Xin chào bạn!</p>
+
+                        <h3 class="pl-title">Nhập mật khẩu</h3>
+
+                        <p class="pl-desc">Nhập mật khẩu để đăng nhập tài khoản <span class="pl-highlight" ng-bind="PhoneLogin.mobile"></span></p>
+
+
+
+                        <div class="pl-float-group">
+
+                            <div class="pl-float-label-wrap">
+
+                                <input id="pl-password" type="password" ng-class="['pl-float-input', PhoneLogin.loginError ? 'pl-input-error' : '']" placeholder=" " ng-model="PhoneLogin.password" ng-change="PhoneLogin.loginError = ''" ng-keydown="$event.keyCode === 13 &amp;&amp; PhoneLogin.login()" autocomplete="current-password">
+
+                                <label class="pl-float-label" for="pl-password">Mật khẩu <span class="pl-required">*</span></label>
+
+                                <button type="button" class="pl-eye" ng-click="PhoneLogin.toggleEye('password')" tabindex="-1">
+
+                                    <i class="fa" ng-class="PhoneLogin.eyePassword ? 'fa-eye-slash' : 'fa-eye'"></i>
+
+                                </button>
+
+                            </div>
+
+                            <p class="pl-otp-err-msg" ng-show="PhoneLogin.loginError" ng-bind="PhoneLogin.loginError"></p>
+
+                            <div class="pl-field-footer">
+
+                                <a class="pl-link pl-forgot" ng-click="PhoneLogin.step = 'forgot-password'">Quên mật khẩu?</a>
+
+                            </div>
+
+                        </div>
+
+
+
+                        <button id="pl-login-btn" type="button" class="pl-btn-teal" ng-click="PhoneLogin.login()" ng-disabled="PhoneLogin.loading || !PhoneLogin.password">
+
+                            <span ng-show="!PhoneLogin.loading">Đăng nhập</span>
+
+                            <span ng-show="PhoneLogin.loading"><i class="fa fa-spinner fa-spin"></i></span>
+
+                        </button>
+
+
+
+                        <a class="pl-back" ng-click="PhoneLogin.step = 'phone'">Quay lại</a>
+
+                    </div>
+
+
+
+                    
+
+                    <div ng-show="PhoneLogin.step === 'create-password'">
+
+                        <p class="pl-greeting">Xin chào bạn!</p>
+
+                        <h3 class="pl-title">Tạo mật khẩu mới</h3>
+
+                        <p class="pl-desc">Hãy đặt một mật khẩu mới mạnh và dễ nhớ cho bạn.</p>
+
+
+
+                        <div class="pl-float-group">
+
+                            <div class="pl-float-label-wrap">
+
+                                <input id="pl-new-password" type="password" ng-class="['pl-float-input', PhoneLogin.createPasswordError ? 'pl-input-error' : '']" placeholder=" " ng-model="PhoneLogin.newPassword" ng-change="PhoneLogin.createPasswordError = ''" ng-keydown="$event.keyCode === 13 &amp;&amp; PhoneLogin.goToOtp()" autocomplete="new-password">
+
+                                <label class="pl-float-label" for="pl-new-password">Mật khẩu mới <span class="pl-required">*</span></label>
+
+                                <button type="button" class="pl-eye" ng-click="PhoneLogin.toggleEye('newPassword')" tabindex="-1">
+
+                                    <i class="fa" ng-class="PhoneLogin.eyeNewPassword ? 'fa-eye-slash' : 'fa-eye'"></i>
+
+                                </button>
+
+                            </div>
+
+                            <p class="pl-otp-err-msg" ng-show="PhoneLogin.createPasswordError" ng-bind="PhoneLogin.createPasswordError"></p>
+
+                        </div>
+
+
+
+                        <button id="pl-create-pw-btn" type="button" class="pl-btn-teal" ng-click="PhoneLogin.goToOtp()" ng-disabled="PhoneLogin.loading || !PhoneLogin.newPassword || PhoneLogin.newPassword.length &lt; 6">
+
+                            <span>Tiếp tục</span>
+
+                        </button>
+
+
+
+                        <a class="pl-switch-link" ng-click="PhoneLogin.open()">Đăng nhập bằng tài khoản khác</a>
+
+                    </div>
+
+
+
+                    
+
+                    <div ng-show="PhoneLogin.step === 'forgot-password'">
+
+                        <p class="pl-greeting">Xin chào bạn!</p>
+
+                        <h3 class="pl-title">Quên mật khẩu</h3>
+
+                        <p class="pl-desc">Nhập số điện thoại để nhận mã OTP khôi phục mật khẩu.</p>
+
+
+
+                        <div class="pl-float-group">
+
+                            <div class="pl-float-label-wrap">
+
+                                <input id="pl-forgot-mobile" type="tel" ng-class="['pl-float-input', PhoneLogin.forgotError ? 'pl-input-error' : '']" placeholder=" " ng-model="PhoneLogin.mobile" ng-change="PhoneLogin.forgotError = ''" ng-keydown="$event.keyCode === 13 &amp;&amp; PhoneLogin.forgotSendOTP()" maxlength="10" autocomplete="tel">
+
+                                <label class="pl-float-label" for="pl-forgot-mobile">Số điện thoại <span class="pl-required">*</span></label>
+
+                                <button type="button" class="pl-float-clear" ng-show="PhoneLogin.mobile" ng-click="PhoneLogin.mobile = ''; PhoneLogin.forgotError = ''" tabindex="-1">
+
+                                    <i class="fa fa-times"></i>
+
+                                </button>
+
+                            </div>
+
+                            <p class="pl-otp-err-msg" ng-show="PhoneLogin.forgotError" ng-bind="PhoneLogin.forgotError"></p>
+
+                        </div>
+
+
+
+                        <button id="pl-forgot-btn" type="button" class="pl-btn-teal" ng-click="PhoneLogin.forgotSendOTP()" ng-disabled="PhoneLogin.loading || !PhoneLogin.mobile">
+
+                            <span ng-show="!PhoneLogin.loading">Tiếp tục</span>
+
+                            <span ng-show="PhoneLogin.loading"><i class="fa fa-spinner fa-spin"></i></span>
+
+                        </button>
+
+
+
+                        <a class="pl-switch-link" ng-click="PhoneLogin.open()">Đăng nhập bằng tài khoản khác</a>
+
+                    </div>
+
+
+
+                    
+
+                    <div ng-show="PhoneLogin.step === 'reset-password'">
+
+                        <p class="pl-greeting">Xin chào bạn!</p>
+
+                        <h3 class="pl-title">Tạo mật khẩu mới</h3>
+
+                        <p class="pl-desc">Hãy đặt một mật khẩu mới mạnh và dễ nhớ cho bạn.</p>
+
+
+
+                        <div class="pl-float-group">
+
+                            <div class="pl-float-label-wrap">
+
+                                <input id="pl-reset-password" type="password" ng-class="['pl-float-input', PhoneLogin.resetPasswordError ? 'pl-input-error' : '']" placeholder=" " ng-model="PhoneLogin.newPassword" ng-change="PhoneLogin.resetPasswordError = ''" ng-keydown="$event.keyCode === 13 &amp;&amp; PhoneLogin.resetPasswordFinal()" autocomplete="new-password">
+
+                                <label class="pl-float-label" for="pl-reset-password">Mật khẩu mới <span class="pl-required">*</span></label>
+
+                                <button type="button" class="pl-eye" ng-click="PhoneLogin.toggleEye('resetPassword')" tabindex="-1">
+
+                                    <i class="fa" ng-class="PhoneLogin.eyeResetPassword ? 'fa-eye-slash' : 'fa-eye'"></i>
+
+                                </button>
+
+                            </div>
+
+                            <p class="pl-otp-err-msg" ng-show="PhoneLogin.resetPasswordError" ng-bind="PhoneLogin.resetPasswordError"></p>
+
+                        </div>
+
+
+
+                        <button id="pl-reset-pw-btn" type="button" class="pl-btn-teal" ng-click="PhoneLogin.resetPasswordFinal()" ng-disabled="PhoneLogin.loading || !PhoneLogin.newPassword || PhoneLogin.newPassword.length &lt; 6">
+
+                            <span ng-show="!PhoneLogin.loading">Cập nhật</span>
+
+                            <span ng-show="PhoneLogin.loading"><i class="fa fa-spinner fa-spin"></i></span>
+
+                        </button>
+
+
+
+                        <a class="pl-switch-link" ng-click="PhoneLogin.open()">Đăng nhập bằng tài khoản khác</a>
+
+                    </div>
+
+
+
+                    
+
+                    <div ng-show="PhoneLogin.step === 'otp'">
+
+                        <p class="pl-greeting">Xin chào bạn!</p>
+
+                        <h3 class="pl-title">Xác thực số điện thoại</h3>
+
+                        <p class="pl-desc" ng-bind-html="PhoneLogin.otpMessage"></p>
+
+
+
+                        
+
+                        <div class="pl-otp-row" ng-class="{'pl-otp-error': PhoneLogin.otpError}">
+
+                            <input id="pl-otp-0" type="tel" maxlength="1" class="pl-otp-box" inputmode="numeric" ng-model="PhoneLogin.otpDigits[0]" ng-change="PhoneLogin.otpChange(0)" ng-keydown="PhoneLogin.otpKeydown($event, 0)" ng-paste="PhoneLogin.otpPaste($event, 0)">
+
+                            <input id="pl-otp-1" type="tel" maxlength="1" class="pl-otp-box" inputmode="numeric" ng-model="PhoneLogin.otpDigits[1]" ng-change="PhoneLogin.otpChange(1)" ng-keydown="PhoneLogin.otpKeydown($event, 1)" ng-paste="PhoneLogin.otpPaste($event, 1)">
+
+                            <input id="pl-otp-2" type="tel" maxlength="1" class="pl-otp-box" inputmode="numeric" ng-model="PhoneLogin.otpDigits[2]" ng-change="PhoneLogin.otpChange(2)" ng-keydown="PhoneLogin.otpKeydown($event, 2)" ng-paste="PhoneLogin.otpPaste($event, 2)">
+
+                            <input id="pl-otp-3" type="tel" maxlength="1" class="pl-otp-box" inputmode="numeric" ng-model="PhoneLogin.otpDigits[3]" ng-change="PhoneLogin.otpChange(3)" ng-keydown="PhoneLogin.otpKeydown($event, 3)" ng-paste="PhoneLogin.otpPaste($event, 3)">
+
+                            <input id="pl-otp-4" type="tel" maxlength="1" class="pl-otp-box" inputmode="numeric" ng-model="PhoneLogin.otpDigits[4]" ng-change="PhoneLogin.otpChange(4)" ng-keydown="PhoneLogin.otpKeydown($event, 4)" ng-paste="PhoneLogin.otpPaste($event, 4)">
+
+                            <input id="pl-otp-5" type="tel" maxlength="1" class="pl-otp-box" inputmode="numeric" ng-model="PhoneLogin.otpDigits[5]" ng-change="PhoneLogin.otpChange(5)" ng-keydown="PhoneLogin.otpKeydown($event, 5)" ng-paste="PhoneLogin.otpPaste($event, 5)">
+
+                        </div>
+
+                        <p class="pl-otp-err-msg" ng-show="PhoneLogin.otpError" ng-bind="PhoneLogin.otpError"></p>
+
+
+
+                        
+
+                        <div class="pl-resend">
+
+                            <span ng-show="PhoneLogin.resendCountdown &gt; 0" class="pl-resend-wait">
+
+                                Gửi lại mã sau <strong ng-bind="PhoneLogin.resendCountdown"></strong>s
+
+                            </span>
+
+                            <a ng-show="PhoneLogin.resendCountdown === 0" class="pl-link" ng-click="PhoneLogin.resendOTP()">Gửi lại mã</a>
+
+                        </div>
+
+
+
+                        <button id="pl-otp-confirm-btn" type="button" class="pl-btn-teal" ng-click="PhoneLogin.registerWithOTP()" ng-disabled="PhoneLogin.loading">
+
+                            <span ng-show="!PhoneLogin.loading">Xác nhận OTP</span>
+
+                            <span ng-show="PhoneLogin.loading"><i class="fa fa-spinner fa-spin"></i></span>
+
+                        </button>
+
+
+
+                        <a class="pl-back" ng-click="PhoneLogin.step = PhoneLogin.forgotMode ? 'forgot-password' : 'create-password'">← Quay lại</a>
+
+
+
+                        <div class="pl-contact-row">
+
+                            <a href="/lien-he" target="_blank">Liên hệ ngay với chúng tôi nếu bạn cần hỗ trợ.</a>
+
+                        </div>
+
+                    </div>
+
+
+
+                </div>
+
+            </div>
+
+        </div>
+
+        
+
+
+
+        <div id="mortgage-calc" class="modal fade">
+
+            <div class="modal-dialog">
+
+                <div class="modal-content">
+
+                    <div class="modal-body" ng-if="!BankLoan.IsShowContactForm">
+
+                        <div class="calc-header clearfix">
+
+                            <img src="/Content/images/UOB-logo.svg" alt="Ngân hàng UOB" ng-show="BankLoan.IsShowUOB()">
+
+                            <span>Ước tính khoản vay</span>
+
+                            <div class="modal-closed" ng-click="BankLoan.Close()">×</div>
+
+                        </div>
+
+                        <div class="calc">
+
+                            <div class="calc-form-group">
+
+                                <div class="calc-label">GIÁ TRỊ NHÀ</div>
+
+                                <input autocomplete="off" class="calc-control" type="text" ng-model="BankLoan.Price" mg-input-formater="number" ng-readonly="true">
+
+                            </div>
+
+                            <div class="calc-form-group">
+
+                                <div class="calc-label">THỜI HẠN</div>
+
+                                <select class="calc-control" ng-options="item.i as item.n for item in BankLoan.Years" ng-model="BankLoan.Year"></select>
+
+                            </div>
+
+                            <div class="calc-form-group">
+
+                                <div class="calc-label">TRẢ TRƯỚC</div>
+
+                                <div class="calc-control-group clearfix">
+
+                                    <input autocomplete="off" type="text" ng-model="BankLoan.Downpayment" mg-input-formater="number" ng-change="BankLoan.OnDownpaymentChange()">
+
+                                    <input autocomplete="off" type="text" ng-model="BankLoan.DownpaymentPercentage" ng-change="BankLoan.OnDownpaymentPercentageChange()">
+
+                                    <span> %</span>
+
+                                </div>
+
+                            </div>
+
+                            <div class="calc-form-group">
+
+                                <div class="calc-label">LÃI SUẤT (%)</div>
+
+                                <input class="calc-control" autocomplete="off" type="text" ng-model="BankLoan.InterestRate">
+
+                            </div>
+
+                        </div>
+
+                        <div class="calc-results">
+
+                            <div class="calc-result clearfix">
+
+                                <div class="result-label price">Khoản trả hàng tháng</div>
+
+                                <div class="result-value price"> <span ng-bind="BankLoan.Installment() | number"></span> đ</div>
+
+                            </div>
+
+
+
+                            <div class="calc-result clearfix">
+
+                                <div class="result-label">Lãi suất</div>
+
+                                <div class="result-value" ng-bind="(BankLoan.InterestRate) + ' %'"></div>
+
+                            </div>
+
+                        </div>
+
+                        <div class="contact-bank" ng-show="BankLoan.IsShowUOB()" ng-click="BankLoan.ShowContactForm()">
+
+                            <div class="contact-bank-btn">Liên hệ tư vấn khoản vay</div>
+
+                        </div>
+
+                    </div>
+
+                    <form id="contact" name="contact" novalidate="" ng-submit="SendUOB.Send(contact)" ng-if="BankLoan.IsShowContactForm">
+
+                        <div class="contact-header clearfix">
+
+                            <img class="lozad" data-src="/Content/images/UOB-logo.svg" alt="Ngân hàng UOB">
+
+                            <span>Liên hệ ngân hàng UOB</span>
+
+                            <div class="modal-closed" ng-click="BankLoan.Close()">×</div>
+
+                        </div>
+
+                        <div class="contact-form">
+
+                            <div class="contact-form-group">
+
+                                <div class="contact-label">HỌ TÊN</div>
+
+                                <input autocomplete="off" name="uob_name" class="contact-control" type="text" ng-model="SendUOB.Name" required="">
+
+                                <div ng-messages="contact.uob_name.$error" ng-if="contact.uob_name.$touched || contact.$submitted">
+
+                                    <div ng-message="required" class="validMessage">Vui lòng nhập “Họ &amp; Tên”.</div>
+
+                                </div>
+
+                            </div>
+
+                            <div class="contact-form-group">
+
+                                <div class="contact-label">ĐIỆN THOAI</div>
+
+                                <input autocomplete="off" name="uob_mobile" class="contact-control" type="text" ng-model="SendUOB.Mobile" required="" pattern="^(02|03|05|07|08|09)[0-9]{8}$">
+
+                                <div ng-messages="contact.uob_mobile.$error" ng-if="contact.uob_mobile.$touched || contact.$submitted">
+
+                                    <div ng-message="required" class="validMessage">Vui lòng nhập “Số  Điện  Thoại”.</div>
+
+                                    <div ng-message="pattern" class="validMessage ng-scope">“Số điện thoại” không hợp lệ.</div>
+
+                                </div>
+
+                            </div>
+
+                            <div class="contact-form-group">
+
+                                <div class="contact-label">EMAIL</div>
+
+                                <input autocomplete="off" name="uob_email" class="contact-control" type="text" ng-model="SendUOB.Email" pattern="^([a-zA-Z0-9_\-\.]+)@([a-zA-Z0-9_\-\.]+)\.([a-zA-Z]{2,5})$" required="">
+
+                                <div ng-messages="contact.uob_email.$error" ng-if="contact.uob_email.$touched || contact.$submitted">
+
+                                    <div ng-message="required" class="validMessage">Vui lòng nhập “Email”.</div>
+
+                                    <div ng-message="pattern" class="validMessage ng-scope">"Email" nhập vào không hợp lệ</div>
+
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                        <div class="contact-bank">
+
+                            <button type="submit" class="contact-bank-btn">Gửi thông tin</button>
+
+                        </div>
+
+                    </form>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </section>
+
+</div>
+
+
+
+
+
+
+
+<div class="mogi-footer" ng-non-bindable="">
+
+    <div class="container">
+
+        <div class="footer-right">
+
+<ul><li class="footer-right-parent"><h3 class="footer-title">Bất động sản TPHCM<span class="mogi-collapse collapsed" data-toggle="collapse" data-target="#footer20"></span></h3><ul id="footer20" class="collapse"><li><a href="/ho-chi-minh/mua-nha-dat">Mua bán nhà đất TPHCM</a></li><li><a href="/ho-chi-minh/quan-7/mua-nha">Bán nhà quận 7</a></li><li><a href="/ho-chi-minh/quan-7/mua-can-ho">Căn hộ quận 7</a></li><li><a href="/ho-chi-minh/quan-9/mua-dat">Bán đất quận 9</a></li><li><a href="/ho-chi-minh/quan-10/thue-phong-tro-nha-tro">Phòng trọ quận 10</a></li><li><a href="/ho-chi-minh/quan-8/thue-nha">Cho thuê nhà quận 8</a></li></ul></li><li class="footer-right-parent"><h3 class="footer-title">Bất động sản Hà Nội<span class="mogi-collapse collapsed" data-toggle="collapse" data-target="#footer21"></span></h3><ul id="footer21" class="collapse"><li><a href="/ha-noi/mua-dat">Bán đất Hà Nội</a></li><li><a href="/ha-noi/mua-nha">Bán nhà Hà Nội</a></li><li><a href="/ha-noi/thue-nha">Cho thuê nhà Hà Nội</a></li><li><a href="/ha-noi/mua-can-ho-chung-cu">Chung cư Hà Nội</a></li><li><a href="/ha-noi/mua-nha-dat">Nhà đất Hà Nội</a></li><li><a href="/ha-noi/thue-phong-tro-nha-tro">Phòng trọ Hà Nội</a></li></ul></li><li class="footer-right-parent"><h3 class="footer-title">Mua bán bất động sản<span class="mogi-collapse collapsed" data-toggle="collapse" data-target="#footer22"></span></h3><ul id="footer22" class="collapse"><li><a href="/binh-duong/mua-dat">Bán đất Bình Dương</a></li><li><a href="/da-nang/mua-nha-dat">Bất động sản Đà Nẵng</a></li><li><a href="/mua-can-ho-chung-cu">Căn hộ chung cư</a></li><li><a href="/mua-nha-dat">Mua bán nhà đất</a></li><li><a href="/hai-phong/mua-nha-dat">Nhà đất Hải Phòng</a></li><li><a href="/mua-mat-bang-cua-hang-shop-cafe-do-uong">Sang quán cafe</a></li></ul></li><li class="footer-right-parent"><h3 class="footer-title">Cho thuê nhà đất<span class="mogi-collapse collapsed" data-toggle="collapse" data-target="#footer23"></span></h3><ul id="footer23" class="collapse"><li><a href="/thue-can-ho">Cho thuê căn hộ</a></li><li><a href="/thue-mat-bang-cua-hang-shop">Cho thuê mặt bằng</a></li><li><a href="/thue-nha">Cho thuê nhà nguyên căn</a></li><li><a href="/thue-nha-xuong-kho-bai-dat">Cho thuê nhà xưởng</a></li><li><a href="/thue-phong-tro-nha-tro">Cho thuê phòng trọ</a></li><li><a href="/thue-van-phong">Cho thuê văn phòng</a></li></ul></li></ul>
+
+<ul><li class="footer-right-parent"><h3 class="footer-title">Về Mogi<span class="mogi-collapse collapsed" data-toggle="collapse" data-target="#footer16"></span></h3><ul id="footer16" class="collapse"><li><a href="https://trogiup.mogi.vn/mogi-vn-trieu-niem-tin-dinh-hinh-thuong-hieu">Về chúng tôi</a></li><li><a href="https://trogiup.mogi.vn/dieu-khoan-su-dung/">Điều khoản sử dụng</a></li><li><a href="https://trogiup.mogi.vn/quy-che-hoat-dong/">Quy chế hoạt động</a></li><li><a href="https://trogiup.mogi.vn/thoa-thuan-mang-xa-hoi/">Thỏa thuận mạng XH</a></li><li><a href="https://mogi.vn/lien-he/gui-lien-he">Liên Hệ</a></li></ul></li><li class="footer-right-parent"><h3 class="footer-title">Đối Tác - Thông tin<span class="mogi-collapse collapsed" data-toggle="collapse" data-target="#footer17"></span></h3><ul id="footer17" class="collapse"><li><a href="https://mogi.vn/news/">Tin tức bất động sản</a></li><li><a href="https://muaban.net" target="_blank" rel="noopener nofollow">Muaban.net - Mua bán rao vặt</a></li><li><a href="https://trogiup.mogi.vn/tin-tuc/">Góc báo chí</a></li><li><a href="https://vieclam.net">Việc làm</a></li></ul></li><li class="footer-right-parent"><h3 class="footer-title">Công cụ - Tiện ích<span class="mogi-collapse collapsed" data-toggle="collapse" data-target="#footer18"></span></h3><ul id="footer18" class="collapse"><li><a href="https://mogi.vn/phong-tro-gan-kcn">Phòng trọ gần KCN</a></li><li><a href="https://mogi.vn/phong-tro-gan-truong">Phòng trọ gần trường</a></li><li><a href="https://mogi.vn/10-buoc-mua-nha">10 bước mua nhà</a></li><li><a href="https://mogi.vn/tim-moi-gioi/ho-chi-minh-cid30">Môi giới bất động sản TPHCM</a></li><li><a href="https://mogi.vn/tim-moi-gioi/ha-noi-cid24">Môi giới nhà đất Hà Nội</a></li></ul></li><li class="footer-right-parent"><h3 class="footer-title">Dịch vụ - Quảng cáo<span class="mogi-collapse collapsed" data-toggle="collapse" data-target="#footer19"></span></h3><ul id="footer19" class="collapse"><li><a href="https://trogiup.mogi.vn/khuyen-mai">Chương trình - Khuyến mãi</a></li><li><a href="https://trogiup.mogi.vn/bang-gia-phi-thanh-vien/" target="_blank" rel="noopener nofollow">Bảng giá dịch vụ</a></li><li><a href="https://trogiup.mogi.vn/huong-dan-dang-tin-tren-mogi" target="_blank" rel="noopener nofollow">Hướng dẫn đăng tin</a></li><li><a href="https://trogiup.mogi.vn/huong-dan-thanh-toan-tren-mogi-vn/" target="_blank" rel="noopener nofollow">Hướng dẫn thanh toán</a></li></ul></li></ul>
+
+
+
+        </div>
+
+        <div class="footer-left">
+
+            <ul class="footer-01">
+
+                <li><img src="/content/images/logo.svg" alt="Mogi.vn" height="32" width="96"></li>
+
+                <li><i class="fa fa-phone"></i>0900000007 - 0900000008</li>
+
+                <li><i class="fa fa-envelope"></i><a href="/cdn-cgi/l/email-protection#4a3e38252d233f3a0a27252d23643c24"><span class="__cf_email__" data-cfemail="4231272e2e273002273a232f322e276c212d2f">[email protected]</span></a></li>
+
+                <li class="social-icon">
+
+                    <a aria-label="mogi facebook" href="https://www.facebook.com/mogivietnam" target="_blank" rel="nofollow"><img src="/content/images/icons/facebook-icon.png" width="24" height="24" alt="facebook"></a>
+
+                    <a aria-label="mogi youtube" href="https://www.youtube.com/MogiVNchannel" target="_blank" rel="nofollow"><img src="/content/images/icons/youtube-icon.png" width="24" height="24" alt="youtube"></a>
+
+                    <a aria-label="mogi zalo" href="https://zalo.me/4599343447665056788" class="zalo-icon" target="_blank" rel="nofollow"><img src="/content/images/icons/zl-icon.png" width="24" height="24" alt="zalo"></a>
+
+                    <a aria-label="mogi tiktok" href="https://www.tiktok.com/@mogi.official" target="_blank" rel="nofollow"><img src="/content/images/icons/tiktok-icon.png" width="24" height="24" alt="tiktok"></a>
+
+                </li>
+
+            </ul>
+
+            <ul class="footer-02">
+
+                <li><h3 class="footer-title">CÔNG TY CỔ PHẦN ĐỊNH ANH</h3></li>
+
+                <li>
+
+                    <ul>
+
+                        <li>Chịu trách nhiệm chính: Ông Phạm Chu Hi</li>
+
+                        <li>Giấy phép số: 429/GP-BTTTT do Bộ TTTT cấp ngày 11/10/2019</li>
+
+                    </ul>
+
+                </li>
+
+                <li><h3 class="footer-title">Trụ sở chính:</h3></li>
+
+                <li>
+
+                    <ul>
+
+                        <li>Số 28 - 30 Đường số 2, Khu phố Hưng Gia 5, Phường Tân Hưng, Thành phố Hồ Chí Minh, Việt Nam</li>
+
+                    </ul>
+
+                </li>
+
+                <li><h3 class="footer-title">Văn phòng giao dịch:</h3></li>
+
+                <li>
+
+                    <ul>
+
+                        <li>67/3 Lý Long Tường, Khu phố Nam Quang 2, Phường Tân Hưng, Thành phố Hồ Chí Minh</li>
+
+                        <li>38 Cửa Đông, Phường Hoàn Kiếm, Thành phố Hà Nội</li>
+
+                    </ul>
+
+                </li>
+
+                <li><a href="http://online.gov.vn/Home/WebDetails/31182" target="_blank" rel="nofollow" aria-label="bocongthuong"><img class="lozad bocongthuong" data-src="/content/images/bocongthuong.png" width="150" height="47" alt="bo cong thuong"></a></li>
+
+                <li>
+
+                    <a href="http://www.dmca.com/Protection/Status.aspx?ID=123e32a1-48c0-4151-aa3b-3e80b4d96192" title="DMCA.com Protection Status" class="dmca-badge"> <img src="https://images.dmca.com/Badges/dmca_protected_sml_120m.png?ID=123e32a1-48c0-4151-aa3b-3e80b4d96192" alt="DMCA.com Protection Status"></a>
+
+                    
+
+                </li>
+
+            </ul>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    ;
+
+
+
+    
+
+</body>
+
+</html>

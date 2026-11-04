@@ -89,7 +89,9 @@ class PhoneRevealer:
         2. Static HTML: data attributes, tel:/Zalo links, hidden inputs, inline JSON.
         3. Click-to-reveal in a headless browser (only if Playwright is installed).
         """
-        phone, _ = await self.reveal_contact(url, source, existing_phone=existing_phone, want_email=False)
+        phone, _ = await self.reveal_contact(
+            url, source, existing_phone=existing_phone, want_email=False
+        )
         return phone
 
     async def reveal_email(
@@ -99,7 +101,9 @@ class PhoneRevealer:
         existing_email: Optional[str] = None,
     ) -> Optional[str]:
         """Reveal the unmasked advertiser email (existing value, then static HTML)."""
-        _, email = await self.reveal_contact(url, source, existing_email=existing_email, want_phone=False)
+        _, email = await self.reveal_contact(
+            url, source, existing_email=existing_email, want_phone=False
+        )
         return email
 
     async def reveal_contact(
@@ -190,7 +194,9 @@ class PhoneRevealer:
                     return cleaned
 
         # 4. Check hidden input fields
-        hidden_inputs = sel.css('input[type="hidden"][name*="phone"]::attr(value), input[type="hidden"][id*="phone"]::attr(value)').getall()
+        hidden_inputs = sel.css(
+            'input[type="hidden"][name*="phone"]::attr(value), input[type="hidden"][id*="phone"]::attr(value)'
+        ).getall()
         for val in hidden_inputs:
             cleaned = clean_phone_number(val)
             if cleaned:
@@ -225,7 +231,9 @@ class PhoneRevealer:
                 page = await browser.new_page(
                     user_agent=self.headers["User-Agent"],
                 )
-                await page.goto(url, timeout=int(self.timeout_sec * 1000), wait_until="domcontentloaded")
+                await page.goto(
+                    url, timeout=int(self.timeout_sec * 1000), wait_until="domcontentloaded"
+                )
 
                 # Try clicking known reveal buttons
                 for selector in REVEAL_BUTTON_SELECTORS:
@@ -258,7 +266,9 @@ class PhoneRevealer:
         sel = Selector(text=html)
 
         # 1. Check Cloudflare data-cfemail attribute
-        cf_matches = sel.css('[data-cfemail]::attr(data-cfemail), span.__cf_email__::attr(data-cfemail)').getall()
+        cf_matches = sel.css(
+            "[data-cfemail]::attr(data-cfemail), span.__cf_email__::attr(data-cfemail)"
+        ).getall()
         for cf in cf_matches:
             decoded = decode_cloudflare_email(cf)
             if decoded:
@@ -268,7 +278,9 @@ class PhoneRevealer:
                     return cleaned
 
         # 2. Check Homedy chat attributes (chatpostinfo_..., pj_...)
-        chat_matches = sel.css('a[data-id*="chatpostinfo_"]::attr(data-id), div[data-id*="chatpostinfo_"]::attr(data-id), [id*="pj_"]::attr(id)').getall()
+        chat_matches = sel.css(
+            'a[data-id*="chatpostinfo_"]::attr(data-id), div[data-id*="chatpostinfo_"]::attr(data-id), [id*="pj_"]::attr(id)'
+        ).getall()
         for ch in chat_matches:
             cleaned = clean_email(ch)
             if cleaned:
@@ -292,7 +304,9 @@ class PhoneRevealer:
                 return cleaned
 
         # 5. Check avatar URL containing email (Cafeland)
-        avatar_urls = sel.css('img.avatar::attr(src), .user-avatar img::attr(src), img[src*="@"]::attr(src)').getall()
+        avatar_urls = sel.css(
+            'img.avatar::attr(src), .user-avatar img::attr(src), img[src*="@"]::attr(src)'
+        ).getall()
         for src in avatar_urls:
             cleaned = clean_email(src)
             if cleaned:

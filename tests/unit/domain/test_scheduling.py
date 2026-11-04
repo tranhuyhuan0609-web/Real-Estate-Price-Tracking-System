@@ -17,7 +17,10 @@ def test_interval_sites(seed_row):
 
     assert decide_run(cfg, SiteRunState(), now).mode is RunMode.INCREMENTAL  # never ran
     assert decide_run(cfg, SiteRunState(last_run_at=now - timedelta(seconds=50)), now) is None
-    assert decide_run(cfg, SiteRunState(last_run_at=now - timedelta(seconds=400)), now).mode is RunMode.INCREMENTAL
+    assert (
+        decide_run(cfg, SiteRunState(last_run_at=now - timedelta(seconds=400)), now).mode
+        is RunMode.INCREMENTAL
+    )
     assert decide_run(cfg, SiteRunState(running=True), now) is None
 
 
@@ -53,4 +56,15 @@ def test_schedule_times_use_source_timezone(seed_row):
 def test_full_sweep_wins_over_due_incremental(seed_row):
     cfg = _config(seed_row, schedule_times=["05:00"], interval_seconds=300)
     now = datetime(2026, 11, 4, 5, 1, tzinfo=UTC)
-    assert decide_run(cfg, SiteRunState(last_run_at=now - timedelta(hours=1)), now).mode is RunMode.FULL_SWEEP
+    assert (
+        decide_run(cfg, SiteRunState(last_run_at=now - timedelta(hours=1)), now).mode
+        is RunMode.FULL_SWEEP
+    )
+
+
+def test_content_timezone_does_not_move_the_schedule(seed_row):
+    """Dates are read in Vietnam time by default, but schedule_times stay in source_timezone."""
+    cfg = _config(seed_row, schedule_times=["05:00"], interval_seconds=None)
+    assert cfg.content_timezone == "Asia/Ho_Chi_Minh" and cfg.source_timezone == "UTC"
+    decision = decide_run(cfg, SiteRunState(), datetime(2026, 11, 4, 5, 1, tzinfo=UTC))
+    assert decision is not None and decision.slot == datetime(2026, 11, 4, 5, 0, tzinfo=UTC)

@@ -9,11 +9,17 @@ from realestate.domain.services import (
 
 
 def test_generate_listing_key_with_code():
-    assert generate_listing_key("meeyland", external_code=998877, external_id="abc") == "meeyland_998877"
+    assert (
+        generate_listing_key("meeyland", external_code=998877, external_id="abc")
+        == "meeyland_998877"
+    )
 
 
 def test_generate_listing_key_fallback_to_id():
-    assert generate_listing_key("meeyland", external_code=None, external_id="id_123") == "meeyland_id_123"
+    assert (
+        generate_listing_key("meeyland", external_code=None, external_id="id_123")
+        == "meeyland_id_123"
+    )
 
 
 def test_generate_fingerprint_deterministic_and_normalized():
@@ -68,4 +74,3 @@ def test_evaluate_price_change_unchanged():
 def test_evaluate_price_change_contact():
     res = evaluate_price_change(old_price=3000000000, new_price=None)
     assert res.price_status == PriceStatus.CONTACT
-

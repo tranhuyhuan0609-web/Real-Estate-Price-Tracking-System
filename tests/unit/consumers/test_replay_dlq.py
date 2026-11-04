@@ -18,14 +18,23 @@ class _AsyncCursor:
         async def gen():
             for d in self._docs:
                 yield d
+
         return gen()
 
 
 @pytest.mark.asyncio
 async def test_replay_from_mongo_success(monkeypatch):
     mock_docs = [
-        {"_id": "doc_1", "raw_key": "mogi_101", "raw_payload": {"site_id": "mogi", "title": "Listing 1"}},
-        {"_id": "doc_2", "raw_key": "mogi_202", "raw_payload": {"site_id": "mogi", "title": "Listing 2"}},
+        {
+            "_id": "doc_1",
+            "raw_key": "mogi_101",
+            "raw_payload": {"site_id": "mogi", "title": "Listing 1"},
+        },
+        {
+            "_id": "doc_2",
+            "raw_key": "mogi_202",
+            "raw_payload": {"site_id": "mogi", "title": "Listing 2"},
+        },
     ]
     mock_collection = MagicMock()
     mock_collection.find.return_value = _AsyncCursor(mock_docs)
@@ -34,7 +43,8 @@ async def test_replay_from_mongo_success(monkeypatch):
     mock_client.__getitem__.return_value.__getitem__.return_value = mock_collection
     mock_client.close = AsyncMock()
     monkeypatch.setattr(
-        "realestate.infrastructure.messaging.dlq.AsyncMongoClient", MagicMock(return_value=mock_client)
+        "realestate.infrastructure.messaging.dlq.AsyncMongoClient",
+        MagicMock(return_value=mock_client),
     )
     mock_publisher = AsyncMock()
 
@@ -66,7 +76,10 @@ async def test_replay_from_kafka_success(monkeypatch):
 
     mock_consumer = AsyncMock()
     mock_consumer.getmany = AsyncMock(side_effect=[{"tp": [mock_msg_1]}, {}])
-    monkeypatch.setattr("realestate.infrastructure.messaging.dlq.AIOKafkaConsumer", MagicMock(return_value=mock_consumer))
+    monkeypatch.setattr(
+        "realestate.infrastructure.messaging.dlq.AIOKafkaConsumer",
+        MagicMock(return_value=mock_consumer),
+    )
 
     mock_publisher = AsyncMock()
 

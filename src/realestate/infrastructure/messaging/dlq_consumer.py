@@ -10,6 +10,7 @@ from typing import Any
 from pymongo import UpdateOne
 
 from realestate.infrastructure.messaging.base_consumer import BaseConsumer
+from realestate.infrastructure.observability.metrics import Heartbeat
 
 
 class DLQEventConsumerService(BaseConsumer[dict, None]):
@@ -26,6 +27,7 @@ class DLQEventConsumerService(BaseConsumer[dict, None]):
         init_indexes: Callable[[], None] | None = None,
         batch_size: int = 50,
         run_once: bool = False,
+        heartbeat: Heartbeat | None = None,
     ) -> None:
         super().__init__(
             consumer_factory=consumer_factory,
@@ -34,6 +36,7 @@ class DLQEventConsumerService(BaseConsumer[dict, None]):
             group_id=group_id,
             batch_size=batch_size,
             run_once=run_once,
+            heartbeat=heartbeat,
         )
         self.collection = collection
         self._init_indexes = init_indexes
@@ -47,7 +50,11 @@ class DLQEventConsumerService(BaseConsumer[dict, None]):
 
     def decode(self, msg: Any) -> dict:
         now = datetime.now(timezone.utc).isoformat()
-        doc = dict(msg.value) if isinstance(msg.value, dict) else {"raw_payload": msg.value, "failed_at": now}
+        doc = (
+            dict(msg.value)
+            if isinstance(msg.value, dict)
+            else {"raw_payload": msg.value, "failed_at": now}
+        )
         doc.setdefault("ingested_at", now)
         doc.setdefault("kafka_topic", msg.topic)
         doc.setdefault("kafka_partition", msg.partition)

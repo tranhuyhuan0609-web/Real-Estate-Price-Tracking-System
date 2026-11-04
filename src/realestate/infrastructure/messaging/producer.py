@@ -16,8 +16,10 @@ logger = logging.getLogger(__name__)
 class AioKafkaEventPublisher(EventPublisher):
     """Kafka event publisher implementation using aiokafka."""
 
-    def __init__(self, bootstrap_servers: str) -> None:
+    def __init__(self, bootstrap_servers: str, security: Optional[Dict[str, Any]] = None) -> None:
+        """``security``: extra aiokafka kwargs (security_protocol, sasl_*, ssl_context)."""
         self.bootstrap_servers = bootstrap_servers
+        self._security = {k: v for k, v in (security or {}).items() if k != "bootstrap_servers"}
         self._producer: Optional[AIOKafkaProducer] = None
 
     async def start(self) -> None:
@@ -28,6 +30,7 @@ class AioKafkaEventPublisher(EventPublisher):
                 enable_idempotence=True,
                 value_serializer=lambda v: json.dumps(v, default=str).encode("utf-8"),
                 key_serializer=lambda k: k.encode("utf-8") if isinstance(k, str) else k,
+                **self._security,
             )
             await self._producer.start()
             logger.info("AIOKafkaProducer started on %s", self.bootstrap_servers)

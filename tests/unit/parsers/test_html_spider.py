@@ -120,8 +120,14 @@ async def test_generic_html_spider_crawl(mogi_html_config, monkeypatch):
     spider = GenericHtmlSpider(mogi_html_config)
 
     # Mock HTTP client responses for list page and detail page
-    mock_list_response = MagicMock(status_code=200, text=SAMPLE_LIST_HTML, url=httpx.URL("https://mogi.vn/mua-nha-dat"))
-    mock_detail_response = MagicMock(status_code=200, text=SAMPLE_DETAIL_HTML, url=httpx.URL("https://mogi.vn/quan-1/ban-nha-pho/nha-dep-id101"))
+    mock_list_response = MagicMock(
+        status_code=200, text=SAMPLE_LIST_HTML, url=httpx.URL("https://mogi.vn/mua-nha-dat")
+    )
+    mock_detail_response = MagicMock(
+        status_code=200,
+        text=SAMPLE_DETAIL_HTML,
+        url=httpx.URL("https://mogi.vn/quan-1/ban-nha-pho/nha-dep-id101"),
+    )
 
     async def mock_get(url, params=None, timeout=None):
         if "mua-nha-dat" in str(url):
@@ -168,6 +174,7 @@ async def test_generic_html_spider_crawl(mogi_html_config, monkeypatch):
 
 def test_extract_selector_value_with_xpath_functions(mogi_html_config):
     from parsel import Selector
+
     spider = GenericHtmlSpider(mogi_html_config)
 
     html = """
@@ -181,5 +188,3 @@ def test_extract_selector_value_with_xpath_functions(mogi_html_config):
     xpath_selector = "//div[contains(@class, 'info-attr')][span[contains(text(), 'Ngày đăng')]]/span[2]/text(), span.fallback-date::text"
     val = spider._extract_selector_value(sel, xpath_selector)
     assert val == "31/10/2026"
-
-

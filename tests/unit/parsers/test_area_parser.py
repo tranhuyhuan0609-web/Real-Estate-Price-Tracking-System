@@ -21,3 +21,8 @@ def test_parse_area_invalid():
     assert parse_vietnamese_area(None) is None
     assert parse_vietnamese_area("-50 m2") is None
 
+
+def test_parse_area_with_superscript_unit_split_by_text_extraction():
+    # "250 m<sup>2</sup>" extracted with "li ::text" gives "250 m 2"
+    assert parse_vietnamese_area("250 m 2") == 250.0
+    assert parse_vietnamese_area("250 m") is None

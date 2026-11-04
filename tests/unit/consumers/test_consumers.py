@@ -117,25 +117,44 @@ async def test_batch_failure_falls_back_and_classifies_errors():
 
 async def test_silver_gold_updates_run_metrics_then_commits():
     uc = AsyncMock()
-    uc.execute_batch.side_effect = lambda evs: [(e, e.listing_key == "a", e.listing_key == "b") for e in evs]
+    uc.execute_batch.side_effect = lambda evs: [
+        (e, e.listing_key == "a", e.listing_key == "b") for e in evs
+    ]
     repo = AsyncMock()
     kafka = FakeKafkaConsumer([_ok(1, "a"), _ok(2, "b"), _ok(3, "c", run_id="run_2")])
     worker = CleanEventProcessorService(
-        use_case=uc, listing_repo=repo, consumer_factory=lambda: kafka,
-        dlq_publisher=AsyncMock(), dlq_topic="dlq", group_id="sg", run_once=True,
+        use_case=uc,
+        listing_repo=repo,
+        consumer_factory=lambda: kafka,
+        dlq_publisher=AsyncMock(),
+        dlq_topic="dlq",
+        group_id="sg",
+        run_once=True,
     )
     await worker.run()
 
     calls = {c.args[0]: c.kwargs for c in repo.batch_update_crawl_run_metrics.await_args_list}
-    assert calls["run_1"] == {"items_processed": 2, "new_listings_count": 1, "price_changes_detected": 1}
-    assert calls["run_2"] == {"items_processed": 1, "new_listings_count": 0, "price_changes_detected": 0}
+    assert calls["run_1"] == {
+        "items_processed": 2,
+        "new_listings_count": 1,
+        "price_changes_detected": 1,
+    }
+    assert calls["run_2"] == {
+        "items_processed": 1,
+        "new_listings_count": 0,
+        "price_changes_detected": 0,
+    }
     assert kafka.commits == 1 and worker.total_processed == 3
 
 
 def test_silver_gold_poison_pill_classification():
     worker = CleanEventProcessorService(
-        use_case=AsyncMock(), listing_repo=AsyncMock(), consumer_factory=MagicMock(),
-        dlq_publisher=AsyncMock(), dlq_topic="dlq", group_id="sg",
+        use_case=AsyncMock(),
+        listing_repo=AsyncMock(),
+        consumer_factory=MagicMock(),
+        dlq_publisher=AsyncMock(),
+        dlq_topic="dlq",
+        group_id="sg",
     )
     assert worker.is_poison_pill(psycopg.errors.CheckViolation())
     assert worker.is_poison_pill(ValueError())
@@ -165,3 +184,17 @@ async def test_dlq_worker_retries_when_mongo_fails():
         collection=collection, consumer_factory=lambda: kafka, group_id="dlq_w", run_once=True
     ).run()
     assert kafka.commits == 0 and [off for _, off in kafka.seeks] == [7]
+
+
+async def test_outcomes_are_counted_in_metrics():
+    from realestate.infrastructure.observability.metrics import CONSUMER_MESSAGES
+
+    def value(outcome):
+        return CONSUMER_MESSAGES.labels("bronze", outcome)._value.get()
+
+    before = {o: value(o) for o in ("stored", "dlq", "retry")}
+    kafka = FakeKafkaConsumer([_ok(1, "a"), _msg(2, {"garbage": True})])
+    await _bronze(kafka).run()
+    assert value("stored") - before["stored"] == 1
+    assert value("dlq") - before["dlq"] == 1
+    assert value("retry") == before["retry"]

@@ -26,7 +26,9 @@ class DatabaseSettings(BaseSubSettings):
     def postgres_dsn(self) -> str:
         """Build a PostgreSQL connection string."""
         if not self.POSTGRES_USER or not self.POSTGRES_DB:
-            raise ValueError("PostgreSQL settings are not configured (POSTGRES_USER, POSTGRES_DB required).")
+            raise ValueError(
+                "PostgreSQL settings are not configured (POSTGRES_USER, POSTGRES_DB required)."
+            )
         username = quote(self.POSTGRES_USER, safe="")
         password = quote(self.POSTGRES_PASSWORD.get_secret_value(), safe="")
         database = quote(self.POSTGRES_DB, safe="")
@@ -39,4 +41,6 @@ class DatabaseSettings(BaseSubSettings):
             raise ValueError("MongoDB settings are not configured (MONGO_USER, MONGO_DB required).")
         username = quote(self.MONGO_USER, safe="")
         password = quote(self.MONGO_PASSWORD.get_secret_value(), safe="")
-        return f"mongodb://{username}:{password}@{self.MONGO_HOST}:{self.MONGO_PORT}/?authSource=admin"
+        return (
+            f"mongodb://{username}:{password}@{self.MONGO_HOST}:{self.MONGO_PORT}/?authSource=admin"
+        )

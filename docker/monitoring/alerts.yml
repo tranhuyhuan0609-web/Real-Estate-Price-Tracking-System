@@ -1,0 +1,72 @@
+# Alert rules for the metrics in src/realestate/infrastructure/observability/metrics.py.
+# Delivered to Telegram by Alertmanager (docker/monitoring/alertmanager.yml.tmpl).
+# `summary` and `action` are shown in the Telegram message.
+groups:
+  - name: realestate
+    rules:
+      - alert: ProcessStalled
+        expr: time() - realestate_heartbeat_timestamp_seconds > 300
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.process }} không chạy tiếp được trong 5 phút (vòng lặp bị treo)"
+          action: "dc logs --tail=200 {{ $labels.process }}; Docker sẽ tự khởi động lại container"
+
+      - alert: TargetDown
+        expr: up{job="realestate"} == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.service }} ({{ $labels.instance }}) không trả metrics, process đã dừng?"
+          action: "dc ps; dc logs --tail=200 {{ $labels.service }}"
+
+      - alert: DeadLetterQueueGrowing
+        expr: sum by (consumer) (increase(realestate_consumer_messages_total{outcome="dlq"}[30m])) > 20
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.consumer }} đẩy {{ $value | humanize }} tin vào DLQ trong 30 phút (parser hoặc dữ liệu sàn thay đổi?)"
+          action: "Xem db.dlq_events trong Mongo, sửa parser rồi chạy: realestate replay-dlq"
+
+      - alert: ConsumerRetryLoop
+        expr: sum by (consumer) (rate(realestate_consumer_messages_total{outcome="retry"}[10m])) > 0.5
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.consumer }} liên tục thử lại: Postgres/Mongo/Kafka có thể đang lỗi"
+          action: "dc ps (postgres, mongo, kafka phải healthy)"
+
+      - alert: ConsumerLagHigh
+        expr: sum by (consumer) (realestate_consumer_lag_messages) > 5000
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.consumer }} đang tồn {{ $value | humanize }} tin chưa xử lý"
+          action: "Tăng replicas của worker (topic có 4 partition) hoặc kiểm tra DB chậm"
+
+      - alert: CrawlReturnedNothing
+        expr: realestate_crawl_last_items == 0
+        labels: {severity: warning}
+        annotations:
+          summary: "Lượt crawl {{ $labels.mode }} gần nhất của {{ $labels.site }} lấy được 0 tin"
+          action: "Sàn đổi URL/giao diện hoặc chặn bot? Mở URL trong configs/sites/{{ $labels.site }}.yaml, xem runbook mục 7"
+
+      - alert: FullSweepFailing
+        expr: sum by (site) (increase(realestate_crawl_runs_total{mode="full_sweep", result=~"error|failed"}[1d])) >= 2
+        labels: {severity: warning}
+        annotations:
+          summary: "Full sweep của {{ $labels.site }} lỗi {{ $value }} lần hôm nay; lifecycle không được áp dụng"
+          action: "SELECT error_message FROM crawl_runs WHERE site_id='{{ $labels.site }}' ORDER BY started_at DESC LIMIT 3"
+
+      - alert: MassExpiry
+        expr: sum by (site) (increase(realestate_lifecycle_expired_total[1h])) > 1000
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $value | humanize }} tin {{ $labels.site }} bị expire trong 1 giờ (sweep bị cắt ngắn?)"
+          action: "So sánh items_scraped của sweep gần nhất với các lần trước"
+
+      - alert: BackupStale
+        expr: time() - realestate_backup_last_success_timestamp_seconds > 2 * 86400
+        labels: {severity: warning}
+        annotations:
+          summary: "Backup {{ $labels.store }} không thành công quá 2 ngày"
+          action: "dc logs --tail=50 backup"

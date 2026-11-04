@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import List, Tuple
 
-from realestate.application.ports.listing_repository import ListingRepository
+from realestate.application.ports.listing_repository import ListingObservation, ListingRepository
 from realestate.domain.entities.listing import RawEventMessage
 
 logger = logging.getLogger(__name__)
@@ -17,17 +17,22 @@ class ProcessSilverGoldUseCase:
     def __init__(self, pg_repo: ListingRepository) -> None:
         self.pg_repo = pg_repo
 
-    async def execute(self, event: RawEventMessage, update_crawl_run: bool = True) -> Tuple[bool, bool]:
+    async def execute(
+        self, event: RawEventMessage, update_crawl_run: bool = True
+    ) -> Tuple[bool, bool]:
         """Process a single event message into Silver/Gold storage."""
         is_new, price_changed = await self.pg_repo.ingest_listing_transactional(
             item=event.parsed_data,
             crawl_run_id=event.crawl_run_id,
             update_crawl_run=update_crawl_run,
             event_time=event.scraped_at,
+            feed=event.site_id,
         )
         logger.debug(
             "Processed Silver/Gold for '%s' (is_new=%s, price_changed=%s)",
-            event.listing_key, is_new, price_changed
+            event.listing_key,
+            is_new,
+            price_changed,
         )
         return is_new, price_changed
 
@@ -37,7 +42,12 @@ class ProcessSilverGoldUseCase:
         """Process a batch of event messages into Silver/Gold storage in a single transaction."""
         if not events:
             return []
-        batch = [(e.parsed_data, e.crawl_run_id, e.scraped_at) for e in events]
+        batch = [
+            ListingObservation(e.parsed_data, e.crawl_run_id, e.scraped_at, feed=e.site_id)
+            for e in events
+        ]
         results = await self.pg_repo.ingest_batch_transactional(batch)
-        return [(events[i], results[i][0], results[i][1]) for i in range(len(events))]
-
+        return [
+            (event, is_new, changed)
+            for event, (is_new, changed) in zip(events, results, strict=True)
+        ]

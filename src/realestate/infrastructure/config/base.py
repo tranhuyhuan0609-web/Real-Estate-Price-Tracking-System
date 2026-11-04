@@ -16,4 +16,3 @@ class BaseSubSettings(BaseSettings):
         extra="ignore",
         validate_default=True,
     )
-

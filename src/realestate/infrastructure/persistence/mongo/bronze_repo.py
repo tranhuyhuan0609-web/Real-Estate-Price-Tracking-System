@@ -44,14 +44,18 @@ class MongoBronzeRepository(BronzeRepository):
                 "$set": {
                     "site_id": event.site_id,
                     "latest_raw_payload": event.raw_payload,
+                },
+                "$max": {
                     "last_scraped_at": event.scraped_at,
+                },
+                "$min": {
+                    "first_scraped_at": event.scraped_at,
                 },
                 "$addToSet": {
                     "crawl_run_ids": event.crawl_run_id,
                 },
                 "$setOnInsert": {
                     "listing_key": event.listing_key,
-                    "first_scraped_at": event.scraped_at,
                 },
             }
 

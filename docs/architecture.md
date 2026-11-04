@@ -2,7 +2,7 @@
 
 ## 1. Overview & High-Level Design
 
-The **Real Estate Price Tracking System** is an event-driven, production-grade distributed crawling and analytical platform designed to track real estate listings, detect price changes, deduplicate properties, and compute market aggregates across Vietnam.
+The **Real Estate Price Tracking System** is an event-driven, production-grade distributed crawling and analytical platform designed to track real estate listings, detect price changes, flag likely duplicate properties, and compute market aggregates across Vietnam.
 
 The system follows **Clean Hexagonal Architecture** and the **Medallion Architecture** pattern (Bronze, Silver, Gold data layers) with Apache Kafka acting as the asynchronous event backbone.
 
@@ -52,11 +52,19 @@ flowchart TD
   - `listings`: Normalized core listing metadata (price, area, status, fingerprint, last_seen_at).
   - `listing_details`: Rich descriptive attributes, geographical PostGIS points (`geom`), addresses, and media URLs.
   - `advertisers`: De-duplicated brokers and owners identified by unified phone/identity.
-- **Deduplication**: Fingerprint algorithm normalizes compound addresses, coordinates, and physical parameters to detect duplicate ads across multiple portals.
+  - `listing_feeds`: which crawler feeds have seen each listing (ADR 0005).
+- **Portals and feeds** (ADR 0005): `listing_key = <portal>_<id>`. Several feeds (`mogi`, `mogi_apartment`)
+  can crawl one portal; an ad they share is one listing. Lifecycle is applied per feed through `listing_feeds`.
+- **Property fingerprint** (`domain/services/fingerprint.py`): SHA-256 of
+  `title | area_m2 | city | district | ward`. The title is lower-cased with punctuation and extra spaces removed,
+  the area is rounded to 0.1 m², and administrative codes are used when names are missing. Coordinates, price and
+  advertiser phone are **not** part of it, so revealing a masked phone or changing the price keeps the same
+  fingerprint. It is stored in `listings.property_fingerprint` (indexed) for cross-site duplicate analysis.
+  Listings are **not** merged automatically: each `listing_key` stays its own row.
 
 ### Gold Layer (PostgreSQL - Analytical & History)
 - **Tables & Views**:
-  - `listing_price_history`: Append-only chronological record of detected price changes with `price_diff_vnd`, `price_diff_percent`, and `price_status`.
+  - `listing_price_history`: Append-only, monthly-partitioned (ADR 0006) chronological record of detected price changes with `price_diff_vnd`, `price_diff_percent`, and `price_status`.
   - `mv_ward_avg_price_per_m2`: Ward/commune level real-time median and average price per $m^2$ metrics.
   - `mv_steep_price_drops_7d`: Automated identification of properties with price drops $\ge 5\%$ over the past 7 days.
 
@@ -98,3 +106,12 @@ applied. `PgListingRepository` treats an event with `event_time < listings.last_
 event never changes price, status, `missing_count`, advertiser or details, and never writes price history.
 It can only widen the observed window (`first_seen_at = LEAST(...)`, which also keeps
 `chk_listing_time_order` valid) and fill a missing `published_at`.
+
+## 6. Observability
+
+Metrics (`infrastructure/observability/metrics.py`, `/metrics` on `METRICS_PORT`): consumer outcomes
+(`stored`/`dlq`/`retry`), batch latency, partition lag, crawl results and durations, lifecycle expiries,
+and a heartbeat per process. The heartbeat file also backs the Docker healthchecks. Alert rules live in
+`docker/monitoring/alerts.yml` and are delivered to Telegram by Alertmanager; see the runbook (section 6).
+Daily Postgres/Mongo dumps go to `./backups` (runbook section 9). The scheduler is leader-elected through a
+Postgres advisory lock (`infrastructure/persistence/postgres/leader_lock.py`), so a second instance is a hot standby.

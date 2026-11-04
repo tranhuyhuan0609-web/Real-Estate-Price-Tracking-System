@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [alertmanager:9093]
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # Compose DNS returns one A record per replica, so every worker replica is scraped.
+  - job_name: realestate
+    dns_sd_configs:
+      - names: [crawler-scheduler, bronze-worker, silver-gold-worker, dlq-worker]
+        type: A
+        port: 9100
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [__meta_dns_name]
+        target_label: service

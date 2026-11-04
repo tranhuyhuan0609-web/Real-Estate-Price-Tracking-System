@@ -39,7 +39,9 @@ def test_page_budget_per_run_mode(config_data):
 def test_stop_path_defaults_to_items_path(config_data):
     data = copy.deepcopy(config_data)
     del data["pagination"]["stop_when_empty_path"]
-    assert CrawlerConfig.model_validate(data).items_stop_path == data["response_mapping"]["items_path"]
+    assert (
+        CrawlerConfig.model_validate(data).items_stop_path == data["response_mapping"]["items_path"]
+    )
 
 
 def test_allowed_domains_derived_from_request_host(config_data):
@@ -59,9 +61,7 @@ def test_schedule_interval_alias(config_data):
     assert CrawlerConfig.model_validate(config_data).schedule_interval_seconds == 300
 
 
-@pytest.mark.parametrize(
-    "site_id", ["", "Mee yland", "a" * 21, "mee.yland"]
-)
+@pytest.mark.parametrize("site_id", ["", "Mee yland", "a" * 21, "mee.yland"])
 def test_bad_site_id(config_data, site_id):
     with pytest.raises(ValidationError):
         make(config_data, site_id=site_id)
@@ -162,11 +162,29 @@ def test_schedule_times_normalized_and_sorted(config_data):
 
 
 def test_latest_scheduled_slot(config_data):
-    config = make(
-        config_data, schedule_times=["08:00"], source_timezone="Asia/Ho_Chi_Minh"
-    )
+    config = make(config_data, schedule_times=["08:00"], source_timezone="Asia/Ho_Chi_Minh")
     now = datetime(2026, 10, 30, 3, 0, tzinfo=timezone.utc)  # 10:00 in Vietnam
-    assert config.latest_scheduled_slot(now) == datetime(
-        2026, 10, 30, 1, 0, tzinfo=timezone.utc
-    )
+    assert config.latest_scheduled_slot(now) == datetime(2026, 10, 30, 1, 0, tzinfo=timezone.utc)
     assert make(config_data).latest_scheduled_slot(now) is None
+
+
+def test_url_template_validation(config_data):
+    from pydantic import ValidationError
+
+    from realestate.domain.entities.crawler_config import CrawlerConfig
+
+    ok = {
+        **config_data,
+        "response_mapping": {
+            **config_data["response_mapping"],
+            "url_template": "https://x.vn/{external_id}.htm",
+        },
+    }
+    assert CrawlerConfig(**ok).response_mapping.url_template == "https://x.vn/{external_id}.htm"
+    for bad in ("https://x.vn/{title}", "https://x.vn/static", "/{external_id}.htm"):
+        data = {
+            **config_data,
+            "response_mapping": {**config_data["response_mapping"], "url_template": bad},
+        }
+        with pytest.raises(ValidationError):
+            CrawlerConfig(**data)

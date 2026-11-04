@@ -3,87 +3,101 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
+
+VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+
+# "<n> <unit> trước" -> timedelta keyword; checked in this order.
+_RELATIVE = (
+    (re.compile(r"(\d+)\s*(?:giây|giay|s)\s*trước"), "seconds"),
+    (re.compile(r"(\d+)\s*(?:phút|phut|p)\s*trước"), "minutes"),
+    (re.compile(r"(\d+)\s*(?:giờ|gio|h)\s*trước"), "hours"),
+    (re.compile(r"(\d+)\s*(?:ngày|ngay)\s*trước"), "days"),
+)
+_DAY_WORDS = ((("hôm nay", "hom nay"), 0), (("hôm qua", "hom qua"), 1))
+_CLOCK = re.compile(r"(\d{1,2}):(\d{2})")
+_DMY = re.compile(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?")
 
 
-def parse_vietnamese_datetime(raw: Any) -> Optional[datetime]:
-    """Parse timestamps from ISO strings, UNIX epoch (sec/ms), or Vietnamese relative/absolute text."""
+def parse_vietnamese_datetime(
+    raw: Any,
+    default_tz: tzinfo = VIETNAM_TZ,
+    now: Optional[datetime] = None,
+) -> Optional[datetime]:
+    """Parse ISO strings, UNIX epochs (s/ms), "dd/mm/yyyy [hh:mm[:ss]]" and Vietnamese relative
+    text ("5 phút trước", "hôm qua 14:30"). Naive values are in ``default_tz``; result is UTC."""
     if not raw:
         return None
     if isinstance(raw, datetime):
-        return raw
-
-    # 1. Numeric UNIX timestamps
+        aware: datetime = raw if raw.tzinfo is not None else raw.replace(tzinfo=default_tz)
+        return aware.astimezone(timezone.utc)
     if isinstance(raw, (int, float)):
-        ts = float(raw)
-        if ts > 1e11:  # milliseconds
-            ts /= 1000.0
-        try:
-            return datetime.fromtimestamp(ts, tz=timezone.utc)
-        except (ValueError, OSError):
-            return None
+        return _from_epoch(float(raw), milliseconds=raw > 1e11)
 
     text = str(raw).strip()
     if text.isdigit() and len(text) in (10, 13):
-        ts = float(text)
-        if len(text) == 13:
-            ts /= 1000.0
-        try:
-            return datetime.fromtimestamp(ts, tz=timezone.utc)
-        except (ValueError, OSError):
-            return None
+        return _from_epoch(float(text), milliseconds=len(text) == 13)
 
-    # 2. Vietnamese relative strings
-    now = datetime.now(timezone.utc)
-    text_lower = text.lower()
+    local_now = (now or datetime.now(timezone.utc)).astimezone(default_tz)
+    for parse in (_relative, _day_word):
+        result = parse(text.lower(), local_now)
+        if result is not None:
+            return result.astimezone(timezone.utc)
+    return _day_month_year(text, default_tz) or _iso(text, default_tz)
 
-    m_sec = re.search(r"(\d+)\s*(?:giây|giay|s)\s*trước", text_lower)
-    if m_sec:
-        return now - timedelta(seconds=int(m_sec.group(1)))
 
-    m_min = re.search(r"(\d+)\s*(?:phút|phut|p)\s*trước", text_lower)
-    if m_min:
-        return now - timedelta(minutes=int(m_min.group(1)))
-
-    m_hour = re.search(r"(\d+)\s*(?:giờ|gio|h)\s*trước", text_lower)
-    if m_hour:
-        return now - timedelta(hours=int(m_hour.group(1)))
-
-    m_day = re.search(r"(\d+)\s*(?:ngày|ngay)\s*trước", text_lower)
-    if m_day:
-        return now - timedelta(days=int(m_day.group(1)))
-
-    if "hôm nay" in text_lower or "hom nay" in text_lower:
-        m_time = re.search(r"(\d{1,2}):(\d{2})", text_lower)
-        if m_time:
-            h, mi = int(m_time.group(1)), int(m_time.group(2))
-            return now.replace(hour=h, minute=mi, second=0, microsecond=0)
-        return now
-
-    if "hôm qua" in text_lower or "hom qua" in text_lower:
-        m_time = re.search(r"(\d{1,2}):(\d{2})", text_lower)
-        yest = now - timedelta(days=1)
-        if m_time:
-            h, mi = int(m_time.group(1)), int(m_time.group(2))
-            return yest.replace(hour=h, minute=mi, second=0, microsecond=0)
-        return yest
-
-    # 3. Standard DD/MM/YYYY or DD-MM-YYYY
-    m_date = re.search(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?", text)
-    if m_date:
-        d, m, y = int(m_date.group(1)), int(m_date.group(2)), int(m_date.group(3))
-        h = int(m_date.group(4)) if m_date.group(4) else 0
-        mi = int(m_date.group(5)) if m_date.group(5) else 0
-        s = int(m_date.group(6)) if m_date.group(6) else 0
-        try:
-            return datetime(y, m, d, h, mi, s, tzinfo=timezone.utc)
-        except ValueError:
-            pass
-
-    # 4. ISO fallback
+def _from_epoch(ts: float, *, milliseconds: bool) -> Optional[datetime]:
     try:
-        clean_str = text.replace("Z", "+00:00")
-        return datetime.fromisoformat(clean_str)
+        return datetime.fromtimestamp(ts / 1000.0 if milliseconds else ts, tz=timezone.utc)
+    except (ValueError, OSError, OverflowError):
+        return None
+
+
+def _relative(text: str, now: datetime) -> Optional[datetime]:
+    for pattern, unit in _RELATIVE:
+        m = pattern.search(text)
+        if m:
+            return now - timedelta(**{unit: int(m.group(1))})
+    return None
+
+
+def _day_word(text: str, now: datetime) -> Optional[datetime]:
+    """ "hôm nay [hh:mm]" / "hôm qua [hh:mm]" """
+    for words, days_ago in _DAY_WORDS:
+        if any(w in text for w in words):
+            day = now - timedelta(days=days_ago)
+            clock = _CLOCK.search(text)
+            if clock:
+                try:
+                    return day.replace(
+                        hour=int(clock.group(1)),
+                        minute=int(clock.group(2)),
+                        second=0,
+                        microsecond=0,
+                    )
+                except ValueError:  # "hôm nay 25:99": keep the day, drop the bogus time
+                    pass
+            return day
+    return None
+
+
+def _day_month_year(text: str, tz: tzinfo) -> Optional[datetime]:
+    m = _DMY.search(text)
+    if not m:
+        return None
+    d, mo, y = (int(m.group(i)) for i in (1, 2, 3))
+    h, mi, s = (int(m.group(i)) if m.group(i) else 0 for i in (4, 5, 6))
+    try:
+        return datetime(y, mo, d, h, mi, s, tzinfo=tz).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _iso(text: str, tz: tzinfo) -> Optional[datetime]:
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except (ValueError, TypeError):
         return None
+    return (dt if dt.tzinfo is not None else dt.replace(tzinfo=tz)).astimezone(timezone.utc)

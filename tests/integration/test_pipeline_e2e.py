@@ -54,15 +54,21 @@ async def _run_until(worker, done: Callable[[], Awaitable[bool]], timeout: float
         await task
 
 
-async def test_raw_event_flows_to_bronze_silver_and_dlq(pg_container, mongo_container, kafka_bootstrap, pg_pool):
+async def test_raw_event_flows_to_bronze_silver_and_dlq(
+    pg_container, mongo_container, kafka_bootstrap, pg_pool
+):
     """`pg_pool` is requested only for its teardown, which truncates the tables this test fills."""
     settings = _settings(pg_container, mongo_container, kafka_bootstrap)
     config = load_site_config(SITES_DIR / "meeyland.yaml")
     raw = load_fixture("meeyland_item.json")
     item = ListingParser(config).parse_item(raw)
     event = RawEventMessage(
-        listing_key=item.listing_key, site_id="meeyland", crawl_run_id="run_e2e",
-        scraped_at=datetime(2026, 11, 4, tzinfo=timezone.utc), parsed_data=item, raw_payload=raw,
+        listing_key=item.listing_key,
+        site_id="meeyland",
+        crawl_run_id="run_e2e",
+        scraped_at=datetime(2026, 11, 4, tzinfo=timezone.utc),
+        parsed_data=item,
+        raw_payload=raw,
     )
 
     admin = AIOKafkaAdminClient(bootstrap_servers=kafka_bootstrap)
@@ -74,7 +80,9 @@ async def test_raw_event_flows_to_bronze_silver_and_dlq(pg_container, mongo_cont
     producer = AIOKafkaProducer(bootstrap_servers=kafka_bootstrap)
     await producer.start()
     try:
-        await producer.send_and_wait(RAW, json.dumps(event.model_dump(mode="json")).encode(), key=b"ok")
+        await producer.send_and_wait(
+            RAW, json.dumps(event.model_dump(mode="json")).encode(), key=b"ok"
+        )
         await producer.send_and_wait(RAW, json.dumps({"not": "an event"}).encode(), key=b"bad")
     finally:
         await producer.stop()
@@ -84,7 +92,9 @@ async def test_raw_event_flows_to_bronze_silver_and_dlq(pg_container, mongo_cont
         await c.start_publisher()
         await c.sync_site_configs_uc.execute([config])
         async with pool.connection() as conn:
-            await conn.execute("INSERT INTO crawl_runs (crawl_run_id, site_id) VALUES ('run_e2e', 'meeyland')")
+            await conn.execute(
+                "INSERT INTO crawl_runs (crawl_run_id, site_id) VALUES ('run_e2e', 'meeyland')"
+            )
 
         db = c.mongo_client[settings.MONGO_DB]
 
@@ -93,7 +103,9 @@ async def test_raw_event_flows_to_bronze_silver_and_dlq(pg_container, mongo_cont
 
         async def silver_done() -> bool:
             async with pool.connection() as conn:
-                cur = await conn.execute("SELECT items_processed FROM crawl_runs WHERE crawl_run_id = 'run_e2e'")
+                cur = await conn.execute(
+                    "SELECT items_processed FROM crawl_runs WHERE crawl_run_id = 'run_e2e'"
+                )
                 return (await cur.fetchone())[0] == 1
 
         async def dlq_done() -> bool:

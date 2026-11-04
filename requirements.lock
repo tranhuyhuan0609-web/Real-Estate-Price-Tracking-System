@@ -108,6 +108,10 @@ parsel==1.12.1 \
     --hash=sha256:cf74e09857329bddc02c13ae239a9b46f410dc5bd1d05361c8c2643a1a5a7149 \
     --hash=sha256:f526df846f3a91e13f5499156ea3e755114834cd126b62cd1d784ef558f3a713
     # via real-estate-tracker
+prometheus-client==0.26.0 \
+    --hash=sha256:04a91bcf94e2cf74a44a1a874d651a2e853ed354b6e822f3b7487751465d5c2b \
+    --hash=sha256:fa93d06737aa02bacd05794768508bb97d2fbee28cb3bca04eaae92f0ca953d6
+    # via real-estate-tracker
 psycopg==3.3.7 \
     --hash=sha256:6574f23fd79bf129ee0616b49f6e358faf7ae1bf3a362d2ad599cf8f9c3d4935 \
     --hash=sha256:d592e88a077e01ff57f22d59f16e828b92f2b2d9f439b6679d582b48d74cf306

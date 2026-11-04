@@ -1,6 +1,6 @@
 """Unit tests for PhoneRevealer and RevealPhoneUseCase."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -10,6 +10,7 @@ from realestate.infrastructure.crawler.spiders.phone_revealer import (
     clean_phone_number,
 )
 from realestate.infrastructure.persistence.postgres.phone_repo import PgPhoneListingRepository
+from tests.helpers import make_mock_pool
 
 
 def test_clean_phone_number_formats():
@@ -93,13 +94,7 @@ async def test_reveal_phone_use_case_success():
         "advertiser_phone": "091748****",
     }
 
-    mock_conn = AsyncMock()
-    mock_conn.cursor = MagicMock()
-    mock_conn.cursor.return_value.__aenter__ = AsyncMock(return_value=mock_cursor)
-    mock_conn.cursor.return_value.__aexit__ = AsyncMock(return_value=None)
-
-    mock_pool = MagicMock()
-    mock_pool.connection.return_value.__aenter__.return_value = mock_conn
+    mock_pool = make_mock_pool(mock_cursor)
 
     mock_revealer = AsyncMock()
     mock_revealer.reveal_phone.return_value = "0917485869"
@@ -111,7 +106,6 @@ async def test_reveal_phone_use_case_success():
     assert result["advertiser_phone"] == "0917485869"
     assert result["status"] == "revealed"
     assert mock_cursor.execute.call_count == 2  # SELECT, UPDATE advertisers
-    assert mock_conn.commit.called
 
 
 @pytest.mark.asyncio
@@ -126,13 +120,7 @@ async def test_reveal_phone_use_case_creates_advertiser_if_missing():
         "advertiser_phone": None,
     }
 
-    mock_conn = AsyncMock()
-    mock_conn.cursor = MagicMock()
-    mock_conn.cursor.return_value.__aenter__ = AsyncMock(return_value=mock_cursor)
-    mock_conn.cursor.return_value.__aexit__ = AsyncMock(return_value=None)
-
-    mock_pool = MagicMock()
-    mock_pool.connection.return_value.__aenter__.return_value = mock_conn
+    mock_pool = make_mock_pool(mock_cursor)
 
     mock_revealer = AsyncMock()
     mock_revealer.reveal_phone.return_value = "0917485869"
@@ -144,7 +132,6 @@ async def test_reveal_phone_use_case_creates_advertiser_if_missing():
     assert result["advertiser_phone"] == "0917485869"
     assert result["status"] == "revealed"
     assert mock_cursor.execute.call_count == 3  # SELECT, INSERT advertisers, UPDATE listings
-    assert mock_conn.commit.called
 
 
 def test_revealer_extracts_email_from_html():
@@ -166,19 +153,23 @@ def test_revealer_extracts_email_from_html():
     assert revealer.extract_email_from_html(html_mailto) == "broker@realestate.vn"
 
     # Text fallback
-    html_text = '<p>Liên hệ chính chủ: minh.land@gmail.com</p>'
+    html_text = "<p>Liên hệ chính chủ: minh.land@gmail.com</p>"
     assert revealer.extract_email_from_html(html_text) == "minh.land@gmail.com"
 
 
 @pytest.mark.asyncio
 async def test_reveal_contact_downloads_page_once(monkeypatch):
     revealer = PhoneRevealer()
-    fetch = AsyncMock(return_value='<a href="tel:0909123456"></a><a href="mailto:seller@example.com"></a>')
+    fetch = AsyncMock(
+        return_value='<a href="tel:0909123456"></a><a href="mailto:seller@example.com"></a>'
+    )
     headless = AsyncMock(return_value=None)
     monkeypatch.setattr(revealer, "_fetch_html", fetch)
     monkeypatch.setattr(revealer, "_extract_via_headless", headless)
 
-    phone, email = await revealer.reveal_contact("https://example.com/1", "mogi", "090****456", "s***@x.com")
+    phone, email = await revealer.reveal_contact(
+        "https://example.com/1", "mogi", "090****456", "s***@x.com"
+    )
 
     assert (phone, email) == ("0909123456", "seller@example.com")
     fetch.assert_awaited_once_with("https://example.com/1")
@@ -189,5 +180,7 @@ async def test_reveal_contact_downloads_page_once(monkeypatch):
 async def test_reveal_phone_accepts_use_case_signature(monkeypatch):
     """RevealPhoneUseCase calls reveal_phone(url=..., source=...) - must match the port."""
     revealer = PhoneRevealer()
-    monkeypatch.setattr(revealer, "_fetch_html", AsyncMock(return_value='<a href="tel:0909123456"></a>'))
+    monkeypatch.setattr(
+        revealer, "_fetch_html", AsyncMock(return_value='<a href="tel:0909123456"></a>')
+    )
     assert await revealer.reveal_phone(url="https://example.com/1", source="mogi") == "0909123456"

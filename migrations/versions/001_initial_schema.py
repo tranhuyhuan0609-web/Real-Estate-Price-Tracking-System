@@ -5,11 +5,12 @@ Revises:
 Create Date: 2026-11-03 16:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 
-revision: str = '001_initial'
+revision: str = "001_initial"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -240,4 +241,3 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS advertisers CASCADE;")
     op.execute("DROP TABLE IF EXISTS crawl_runs CASCADE;")
     op.execute("DROP TABLE IF EXISTS crawler_configs CASCADE;")
-

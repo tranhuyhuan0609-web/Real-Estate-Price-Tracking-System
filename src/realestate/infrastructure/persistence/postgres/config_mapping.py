@@ -30,9 +30,7 @@ def row_to_config(row: Mapping[str, Any]) -> CrawlerConfig:
     data = row["config_json"]
 
     if not isinstance(data, dict):
-        raise ConfigCorruptedError(
-            f"config_json must be an object for site_id '{site_id}'."
-        )
+        raise ConfigCorruptedError(f"config_json must be an object for site_id '{site_id}'.")
 
     columns = {name: row[name] for name in COLUMN_FIELDS}
     columns["schedule_times"] = list(columns["schedule_times"] or [])
@@ -40,8 +38,7 @@ def row_to_config(row: Mapping[str, Any]) -> CrawlerConfig:
     for name, value in columns.items():
         if name in data and data[name] != value:
             raise ConfigCorruptedError(
-                f"Column '{name}' does not match config_json "
-                f"for site_id '{site_id}'."
+                f"Column '{name}' does not match config_json for site_id '{site_id}'."
             )
 
     try:

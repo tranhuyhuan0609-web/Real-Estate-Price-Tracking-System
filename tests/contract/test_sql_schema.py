@@ -1,11 +1,10 @@
-"""Keep sql/init.sql, the Alembic baseline and the code that names tables in agreement."""
+"""Keep sql/init.sql (generated from migrations) and the code that names tables in agreement."""
 
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 INIT_SQL = ROOT / "sql" / "init.sql"
-BASELINE = ROOT / "migrations" / "versions" / "001_initial_schema.py"
 
 
 def _norm(stmt: str) -> str:
@@ -25,13 +24,18 @@ def _tables() -> set[str]:
     return set(re.findall(r"create table if not exists (\w+)", " ".join(_init_statements())))
 
 
-def test_alembic_baseline_matches_init_sql():
-    upgrade = BASELINE.read_text(encoding="utf-8").split("def downgrade")[0]
-    bodies = re.findall(r'op\.execute\("""(.*?)"""\)|op\.execute\("(.*?)"\)', upgrade, re.S)
-    migration = set()
-    for triple, single in bodies:
-        migration |= _statements(triple or single)
-    assert migration == _init_statements()
+def test_init_sql_is_generated_from_migrations():
+    """Migrations are the only schema source; init.sql must be their rendered output."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "scripts/generate_init_sql.py", "--check"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_cli_reset_only_truncates_existing_tables():

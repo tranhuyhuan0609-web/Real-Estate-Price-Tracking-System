@@ -11,4 +11,3 @@ class BronzeRepository(Protocol):
     async def bulk_upsert_raw_events(self, events: List[RawEventMessage]) -> int:
         """Upsert a batch of raw events into storage asynchronously."""
         ...
-

@@ -21,4 +21,3 @@ class AdvertiserData(BaseModel):
     email: Optional[str] = None
     kind: AdvertiserKind = AdvertiserKind.UNKNOWN
     is_verified: bool = False
-

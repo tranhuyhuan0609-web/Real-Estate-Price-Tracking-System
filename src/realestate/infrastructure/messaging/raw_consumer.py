@@ -13,6 +13,7 @@ from realestate.application.use_cases.store_bronze import StoreBronzeUseCase
 from realestate.domain.entities import RawEventMessage
 from realestate.infrastructure.messaging.base_consumer import BaseConsumer
 from realestate.infrastructure.messaging.producer import AioKafkaEventPublisher
+from realestate.infrastructure.observability.metrics import Heartbeat
 
 
 class RawEventConsumerService(BaseConsumer[RawEventMessage, None]):
@@ -29,6 +30,7 @@ class RawEventConsumerService(BaseConsumer[RawEventMessage, None]):
         init_indexes: Callable[[], None] | None = None,
         batch_size: int = 50,
         run_once: bool = False,
+        heartbeat: Heartbeat | None = None,
     ) -> None:
         super().__init__(
             consumer_factory=consumer_factory,
@@ -37,6 +39,7 @@ class RawEventConsumerService(BaseConsumer[RawEventMessage, None]):
             group_id=group_id,
             batch_size=batch_size,
             run_once=run_once,
+            heartbeat=heartbeat,
         )
         self.use_case = use_case
         self._init_indexes = init_indexes
